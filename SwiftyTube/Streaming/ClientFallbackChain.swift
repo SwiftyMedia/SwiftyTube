@@ -20,8 +20,8 @@ public struct FallbackClient: Sendable, Hashable {
 
 /// Clients to try in order; first valid URL wins.
 public enum ClientFallbackChain: Sendable {
-    /// Base chain - fast direct-URL clients first, token-backed web clients last.
-    private static let base: [FallbackClient] = [
+    /// Direct-URL clients first, token-backed web clients last.
+    private static let direct: [FallbackClient] = [
         FallbackClient(client: .visionOS, skipValidation: false),
         FallbackClient(client: .androidVr1_65_10, skipValidation: false),
         FallbackClient(client: .androidVr1_61_48, skipValidation: false),
@@ -29,13 +29,19 @@ public enum ClientFallbackChain: Sendable {
         FallbackClient(client: .tvHtml5SimplyEmbedded, skipValidation: false),
         FallbackClient(client: .iOS, skipValidation: true),
         FallbackClient(client: .tvHtml5, skipValidation: false),
-        FallbackClient(client: .mobile, skipValidation: false),
-        FallbackClient(client: .webRemix, skipValidation: true)
+        FallbackClient(client: .mobile, skipValidation: false)
     ]
 
-    /// Fallback chain for playback.
-    public static var preferred: [FallbackClient] { base }
+    /// Fallback chain for YouTube Music playback.
+    public static var preferred: [FallbackClient] {
+        direct + [FallbackClient(client: .webRemix, skipValidation: true)]
+    }
+
+    /// Fallback chain for main-YouTube playback.
+    public static var youtube: [FallbackClient] {
+        direct + [FallbackClient(client: .web, skipValidation: true)]
+    }
 
     /// Same order for downloads (validation stays on).
-    public static var forDownload: [FallbackClient] { base }
+    public static var forDownload: [FallbackClient] { preferred }
 }

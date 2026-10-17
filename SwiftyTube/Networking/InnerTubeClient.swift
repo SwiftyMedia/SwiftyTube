@@ -64,18 +64,13 @@ public actor InnerTubeClient {
         // Country selector for region-scoped endpoints (charts), e.g.
         // ["selectedValues": ["JP"]}. Unknown fields are ignored elsewhere.
         if let formData { body["formData"] = formData }
-        let json = try await post(endpoint: "browse", body: body, client: client)
-        if let responseContext = json["responseContext"] as? [String: Any],
-           let visitorData = responseContext["visitorData"] as? String
-        {
-            auth.visitorData = visitorData
-        }
-        return json
+        return try await post(endpoint: "browse", body: body, client: client)
     }
 
     public func search(
         query: String,
         params: String? = nil,
+        continuation: String? = nil,
         client: YouTubeClient? = nil,
         locale: YouTubeLocale? = nil
     ) async throws -> [String: Any] {
@@ -84,6 +79,7 @@ public actor InnerTubeClient {
             "query": query
         ]
         if let params { body["params"] = params }
+        if let continuation { body["continuation"] = continuation }
         return try await post(endpoint: "search", body: body, client: client)
     }
 
@@ -91,6 +87,7 @@ public actor InnerTubeClient {
         videoId: String? = nil,
         playlistId: String? = nil,
         index: Int? = nil,
+        continuation: String? = nil,
         client: YouTubeClient? = nil,
         locale: YouTubeLocale? = nil
     ) async throws -> [String: Any] {
@@ -98,6 +95,8 @@ public actor InnerTubeClient {
         if let videoId { body["videoId"] = videoId }
         if let playlistId { body["playlistId"] = playlistId }
         if let index { body["index"] = index }
+        // Comments, related rows and transcripts paginate through `next`.
+        if let continuation { body["continuation"] = continuation }
         return try await post(endpoint: "next", body: body, client: client)
     }
 
@@ -190,6 +189,11 @@ public actor InnerTubeClient {
         let data = try await postData(endpoint: endpoint, body: body, client: client)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw InnerTubeError.decodingFailed
+        }
+        // Every response carries the visitor id; keep the latest for later calls.
+        if let responseContext = json["responseContext"] as? [String: Any],
+           let visitorData = responseContext["visitorData"] as? String {
+            auth.visitorData = visitorData
         }
         return json
     }

@@ -173,6 +173,40 @@ public extension InnerTubeClient {
         return try await post(endpoint: "like/removelike", body: body, client: client)
     }
 
+    func dislike(
+        videoId: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "target": ["videoId": videoId]
+        ]
+        return try await post(endpoint: "like/dislike", body: body, client: client)
+    }
+
+    // MARK: - Transcripts
+
+    /// Transcript segments for a video. `params` is the transcript
+    /// continuation token from the watch `next` response's transcript button.
+    /// `poToken` is needed by recent YouTube builds (FAILED_PRECONDITION
+    /// otherwise); mint one with `PoTokenGenerator`.
+    func transcript(
+        params: String,
+        poToken: String? = nil,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        var body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "params": params
+        ]
+        if let poToken {
+            body["serviceIntegrityDimensions"] = ["poToken": poToken]
+        }
+        return try await post(endpoint: "get_transcript", body: body, client: client)
+    }
+
     // MARK: - Library mutations
 
     /// Library add/remove tokens.

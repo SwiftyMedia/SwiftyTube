@@ -1,6 +1,10 @@
 # SwiftyTube Usage
 
-Every snippet assumes `import SwiftyTube`.
+Every snippet assumes `import SwiftyTube`. This is the shared transport and
+infrastructure reference. Surface-specific guides:
+
+- **[YouTube Music](Music.md)** - music home, library, playlists, library sync.
+- **[YouTube](YouTube.md)** - feeds, search filters, watch/channel parsing, captions, video playback.
 
 ## Client
 
@@ -40,72 +44,26 @@ Rungs: rows 160, cards 480, headers 720, player 1200. Video thumbnails
 (ytimg) carry no size hint — swap `hqdefault` via `maxResVariant`/`sdVariant`
 instead of rewriting.
 
-## Browse, search, player
+## Transport
 
-Raw JSON in, your models out. All calls take optional `client:` / `locale:` overrides.
+Raw JSON in, your models out. All calls take optional `client:` / `locale:`
+overrides. Browse ids, search filters and parsers differ per surface; see
+[Music](Music.md) and [YouTube](YouTube.md).
 
 ```swift
-let home = try await tube.browse(browseId: "FEmusic_home")
+let page = try await tube.browse(browseId: browseId)
 let page2 = try await tube.browse(continuation: token)
 let results = try await tube.search(query: "lofi")
-let upNext = try await tube.next(videoId: id, playlistId: playlist)
+let upNext = try await tube.next(videoId: id, playlistId: playlist) // or next(continuation:)
 let typed: PlayerResponse = try await tube.playerResponse(videoId: id)
 
 // Collect all pages instead of handling continuations by hand:
 let items = try await tube.paginate(
-    browseId: "FEmusic_liked_playlists",
+    browseId: browseId,
     parse: { MyParser.items(from: $0) },
     continuation: { MyParser.token(from: $0) }
 )
 ```
-
-## Library and account
-
-```swift
-try await tube.like(videoId: id)
-try await tube.unlike(videoId: id)
-try await tube.feedback(tokens: [token]) // library add/remove
-try await tube.editPlaylist(
-    playlistId: id,
-    actions: PlaylistEditAction.dictionaries([.addVideo(videoId: id)])
-)
-try await tube.createPlaylist(title: "Gym")
-try await tube.deletePlaylist(playlistId: id)
-try await tube.subscribe(channelId: id)
-try await tube.unsubscribe(channelId: id)
-let me = try await tube.accountInfo() // name, email, avatar
-```
-
-`.addVideo(videoId:setVideoId:)`, `.removeVideo(setVideoId:)`, `.renamePlaylist(name:)` build the action dicts. Pair local-then-remote writes with `OptimisticMutation.attemptingRemote(remote, rollback:)`.
-
-## Library sync
-
-The `Sync` module owns library orchestration; your database stays yours.
-Conform a store to `LibrarySyncStore` (batch section merges plus song /
-playlist / artist / album / podcast primitives), then drive the actors:
-
-```swift
-let store: any LibrarySyncStore = MyStore()
-let tube = InnerTubeClient(config: .music)
-let sync = LibrarySyncService(client: tube, store: store)
-let mutations = MutationService(client: tube, store: store)
-let incremental = IncrementalSyncService(client: tube, librarySync: sync)
-
-let options = LibrarySyncOptions(syncArtists: true, syncSongs: true /* ... */)
-let result = await sync.syncAll(options: options) {
-    await likes.refresh()
-}
-await incremental.checkAndSyncIfStale(options: options)
-
-try await mutations.likeSong(videoId: id)
-try await mutations.addToPlaylist(playlistId: id, songId: videoId)
-_ = try await mutations.createPlaylist(title: "Gym")
-```
-
-`LibraryBrowseParser` / `BrowseLens` parse the library shelves into
-`ParsedSong` / `ParsedAlbum` / `ParsedArtist` / `ParsedPlaylist` /
-`ParsedPodcast` when you need the raw rows. `SyncSong` / `SyncPlaylist`
-carry the same preserve-on-merge policy the actors apply.
 
 ## Play a stream
 
@@ -141,17 +99,6 @@ let result = try await StreamResolver.resolve(
     videoId: id, client: .androidVr1_65_10, using: tube, providers: providers
 )
 let ok = await StreamResolver.validateStream(url: result.streamUrl)
-```
-
-## Video streams
-
-```swift
-switch try await StreamFallback.resolveVideo(request, using: tube, providers: providers) {
-case .muxed(let url):
-    play(url)
-case .split(let video, let audio, _):
-    playEDL(video, audio) // or StreamFallback.combineVideoAndAudio(videoURL:audioURL:duration:)
-}
 ```
 
 ## Durations

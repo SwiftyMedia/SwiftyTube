@@ -25,6 +25,9 @@ public struct PlaybackResult: Sendable, Hashable, Codable {
     public let hasVideoContent: Bool
     /// Combined audio-video stream URL for instant toggling without reloads.
     public let muxedStreamUrl: String?
+    /// Dimensions of the muxed stream (when present), for a quality picker.
+    public let muxedWidth: Int?
+    public let muxedHeight: Int?
     /// Loudness of the selected stream (LUFS) for normalization.
     public let loudnessDb: Double?
 
@@ -43,6 +46,8 @@ public struct PlaybackResult: Sendable, Hashable, Codable {
         musicVideoType: String?,
         hasVideoContent: Bool,
         muxedStreamUrl: String?,
+        muxedWidth: Int? = nil,
+        muxedHeight: Int? = nil,
         loudnessDb: Double?
     ) {
         self.streamUrl = streamUrl
@@ -59,6 +64,8 @@ public struct PlaybackResult: Sendable, Hashable, Codable {
         self.musicVideoType = musicVideoType
         self.hasVideoContent = hasVideoContent
         self.muxedStreamUrl = muxedStreamUrl
+        self.muxedWidth = muxedWidth
+        self.muxedHeight = muxedHeight
         self.loudnessDb = loudnessDb
     }
 

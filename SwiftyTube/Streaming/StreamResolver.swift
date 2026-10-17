@@ -18,6 +18,8 @@ public struct StreamResolveOptions: Sendable {
     public var forDownload: Bool
     public var audioQuality: AudioQuality
     public var downloadQuality: DownloadQuality
+    /// Resolution cap for the returned muxed stream.
+    public var videoQuality: VideoQuality
 
     public init(
         poToken: String? = nil,
@@ -25,7 +27,8 @@ public struct StreamResolveOptions: Sendable {
         preferredFormat: Format? = nil,
         forDownload: Bool = false,
         audioQuality: AudioQuality = .auto,
-        downloadQuality: DownloadQuality = .high
+        downloadQuality: DownloadQuality = .high,
+        videoQuality: VideoQuality = .auto
     ) {
         self.poToken = poToken
         self.streamingDataPoToken = streamingDataPoToken
@@ -33,6 +36,7 @@ public struct StreamResolveOptions: Sendable {
         self.forDownload = forDownload
         self.audioQuality = audioQuality
         self.downloadQuality = downloadQuality
+        self.videoQuality = videoQuality
     }
 
     public static let `default` = StreamResolveOptions()
@@ -219,8 +223,9 @@ public enum StreamResolver: Sendable {
         let duration = videoDetails?.lengthSeconds.flatMap(Int.init)
         let musicVideoType = videoDetails?.musicVideoType
 
+        let muxedFormat = FormatSelector.bestVideoFormat(from: allFormats, preference: options.videoQuality)
         let muxedStreamUrl: String? = {
-            guard let videoFormat = FormatSelector.bestVideoFormat(from: allFormats),
+            guard let videoFormat = muxedFormat,
                   let url = videoFormat.url, !url.isEmpty else {
                 return nil
             }
@@ -245,6 +250,8 @@ public enum StreamResolver: Sendable {
             musicVideoType: musicVideoType,
             hasVideoContent: hasVideoContent,
             muxedStreamUrl: muxedStreamUrl,
+            muxedWidth: muxedFormat?.width,
+            muxedHeight: muxedFormat?.height,
             loudnessDb: selectedFormat.loudnessDb
         )
         SwiftyTubeLog.debug("musicVideoType=\(musicVideoType ?? "nil")")

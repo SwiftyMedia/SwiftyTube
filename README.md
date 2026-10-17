@@ -35,11 +35,11 @@ Guest (signed-out) use works for public content - skip sign-in.
 
 ## What it covers
 
-Transport (`browse`/`search`/`next`/`player`, likes, playlists, subs), stream resolution (format scoring, 9-client fallback, validation, caches), cipher (player.js, deobfuscation, n-transform, self-healing configs), PoToken minting, session import, Keychain helper. Details with examples: [Docs/Usage](Docs/Usage.md).
+Transport (`browse`/`search`/`next`/`player`, likes, playlists, subs), stream resolution (format scoring, 9-client fallback, validation, caches), cipher (player.js, deobfuscation, n-transform, self-healing configs), PoToken minting, session import, Keychain helper. YouTube support (browse ids, search filters, suggestions, and `YouTubeFeedParser`/`YouTubeWatchParser`/`YouTubeChannelParser`/`YouTubeTranscript` for feeds, watch pages, channel tabs and captions). Details with examples: [Docs/Usage](Docs/Usage.md), [Music](Docs/Music.md), [YouTube](Docs/YouTube.md).
 
 ## What apps own
 
-UI, response parsing, databases, settings, Keychain service names, playback. The library returns raw JSON or small models - you decide the rest.
+UI, databases, settings, Keychain service names, playback. Transport returns raw JSON; the bundled YouTube parsers are optional helpers - you decide the rest.
 
 ## Resources
 

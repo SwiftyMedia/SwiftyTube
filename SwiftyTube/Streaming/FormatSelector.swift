@@ -164,7 +164,8 @@ public enum FormatSelector: Sendable {
     // MARK: - Video Format Selection
 
     /// Best muxed (video+audio) format: highest resolution, H.264 first.
-    public static func bestVideoFormat(from formats: [Format]) -> Format? {
+    /// `preference` caps the resolution to the nearest height at or below it.
+    public static func bestVideoFormat(from formats: [Format], preference: VideoQuality = .auto) -> Format? {
         guard !formats.isEmpty else {
             SwiftyTubeLog.debug("No formats to select from (video)")
             return nil
@@ -186,9 +187,7 @@ public enum FormatSelector: Sendable {
 
         let pool = h264PreferredPool(muxedFormats, kind: "muxed")
 
-        let selected = pool.max { a, b in
-            videoFormatScore(a) < videoFormatScore(b)
-        }
+        let selected = selectByHeight(pool, preference: preference) { videoFormatScore($0) }
 
         if let selected {
             SwiftyTubeLog.debug(
@@ -198,6 +197,23 @@ public enum FormatSelector: Sendable {
         }
 
         return selected
+    }
+
+    /// Highest-scoring format at or below the preference height; when nothing
+    /// fits (only larger streams exist), the smallest one above it.
+    static func selectByHeight(
+        _ formats: [Format],
+        preference: VideoQuality,
+        score: (Format) -> Int
+    ) -> Format? {
+        guard let target = preference.height else {
+            return formats.max { score($0) < score($1) }
+        }
+        let atOrBelow = formats.filter { ($0.height ?? 0) <= target }
+        if atOrBelow.isEmpty {
+            return formats.min { ($0.height ?? Int.max) < ($1.height ?? Int.max) }
+        }
+        return atOrBelow.max { score($0) < score($1) }
     }
 
     /// Best DASH video-only format: highest resolution, H.264 preferred for
