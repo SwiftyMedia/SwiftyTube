@@ -70,4 +70,45 @@ public enum BrowseLens: Sendable {
               let runs = accountName["runs"] as? [[String: Any]] else { return nil }
         return runs
     }
+
+    public static func signedInAccount(_ json: [String: Any]) -> SignedInAccount? {
+        func scalarText(_ node: Any?) -> String? {
+            guard let dict = node as? [String: Any] else { return nil }
+            if let simple = dict["simpleText"] as? String, !simple.isEmpty {
+                return simple
+            }
+            return InnerTubeJSON.runsText(dict)
+        }
+
+        var stack: [Any] = [json]
+        while let node = stack.popLast() {
+            if let dict = node as? [String: Any] {
+                for key in ["activeAccountHeaderRenderer", "musicAccountHeaderRenderer"] {
+                    guard let renderer = dict[key] as? [String: Any] else { continue }
+                    let name = scalarText(renderer["accountName"])
+                    let email = scalarText(renderer["email"])
+                    let hasPhoto = (renderer["accountPhoto"] as? [String: Any])?["thumbnails"] != nil
+                    if hasPhoto || (name != nil && !(name ?? "").isEmpty) {
+                        return SignedInAccount(name: name, email: email, hasPhoto: hasPhoto)
+                    }
+                }
+                stack.append(contentsOf: dict.values)
+            } else if let array = node as? [Any] {
+                stack.append(contentsOf: array)
+            }
+        }
+        return nil
+    }
+}
+
+public struct SignedInAccount: Sendable, Equatable {
+    public let name: String?
+    public let email: String?
+    public let hasPhoto: Bool
+
+    init(name: String?, email: String?, hasPhoto: Bool) {
+        self.name = name
+        self.email = email
+        self.hasPhoto = hasPhoto
+    }
 }

@@ -147,8 +147,19 @@ public extension InnerTubeClient {
         locale: YouTubeLocale? = nil
     ) async throws -> Bool {
         let json = try await accountMenu(client: client, locale: locale)
-        guard let runs = BrowseLens.accountNameRuns(json) else { return false }
-        return runs.contains { $0["text"] is String }
+        if let runs = BrowseLens.accountNameRuns(json), !runs.isEmpty {
+            return true
+        }
+        guard let identity = BrowseLens.signedInAccount(json) else {
+            if let dumpPath = PlaylistDetailService.dumpDiagnosticJSON(playlistId: "account_menu", json: json) {
+                SwiftyTubeLog.notice("verifySession: no account header in menu — dumped response to \(dumpPath)")
+            } else {
+                SwiftyTubeLog.error("verifySession: empty account menu response")
+            }
+            return false
+        }
+        SwiftyTubeLog.debug("verifySession: signed in as \(identity.name ?? "?") email=\(identity.email != nil ? "yes" : "no") photo=\(identity.hasPhoto ? "yes" : "no")")
+        return true
     }
 
     /// Fetches account info (name, email, profile picture).
@@ -165,7 +176,8 @@ public extension InnerTubeClient {
               let first = actions.first,
               let openPopup = first["openPopupAction"] as? [String: Any],
               let popup = openPopup["popup"] as? [String: Any],
-              let multiPageMenu = popup["multiPageMenuRenderer"] as? [String: Any],
+              let multiPageMenu = (popup["multiPageMenuRenderer"]
+                  ?? popup["musicMultiPageMenuRenderer"]) as? [String: Any],
               let header = multiPageMenu["header"] as? [String: Any],
               let activeAccount = header["activeAccountHeaderRenderer"] as? [String: Any] else {
             return AccountInfo(name: "Guest")
