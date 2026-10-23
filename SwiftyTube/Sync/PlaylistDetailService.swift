@@ -74,10 +74,14 @@ public actor PlaylistDetailService {
     /// `musicResponsiveListItemRenderer`. With `throwOnTruncation`, a repeat
     /// token or page cap throws instead of returning partial rows — sync
     /// callers must not sweep against a truncated snapshot.
+    /// `onPage` is invoked after every page's rows are extracted (first page
+    /// included), letting callers render progress before the full playlist
+    /// has been fetched.
     public func fetchPlaylistRows(
         playlistId: String,
         maxPages: Int = 100,
-        throwOnTruncation: Bool = false
+        throwOnTruncation: Bool = false,
+        onPage: (([String: Any], [[String: Any]]) async -> Void)? = nil
     ) async throws -> (firstPage: [String: Any], rows: [[String: Any]]) {
         // Stored ids may already carry the prefix (library rows keep the
         // endpoint's VL… id); blindly prepending yields VLVL… and the server
@@ -104,6 +108,9 @@ public actor PlaylistDetailService {
             if let items = extractPlaylistItems(from: json) {
                 hadShelf = true
                 allItems += items
+                if let onPage {
+                    await onPage(json, items)
+                }
             }
             token = extractPlaylistContinuation(from: json)
             pages += 1
@@ -124,9 +131,100 @@ public actor PlaylistDetailService {
         } while token != nil
 
         guard hadShelf, let firstPage else {
-            throw InnerTubeError.invalidResponse
+            let detail = Self.diagnoseNoShelf(in: firstPage ?? [:])
+            SwiftyTubeLog.error("fetchPlaylist \(playlistId): \(detail)")
+            if let prompt = Self.signInPromptText(in: firstPage ?? [:]) {
+                SwiftyTubeLog.error("fetchPlaylist \(playlistId): server sent a sign-in prompt (\(prompt)) — session not accepted")
+                throw InnerTubeError.sessionExpired
+            }
+            if let dumpPath = Self.dumpDiagnosticJSON(playlistId: playlistId, json: firstPage ?? [:]) {
+                SwiftyTubeLog.error("fetchPlaylist \(playlistId): dumped response JSON to \(dumpPath)")
+            }
+            throw InnerTubeError.invalidResponseContent("no playlist shelf in browse response (\(detail))")
         }
         return (firstPage, allItems)
+    }
+
+    static func dumpDiagnosticJSON(playlistId: String, json: [String: Any]) -> String? {
+        guard !json.isEmpty else { return nil }
+        do {
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            let dir = docs.appendingPathComponent("sync-debug", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let stamp = Int(Date().timeIntervalSince1970) * 1000
+            let fileURL = dir.appendingPathComponent("\(playlistId)-\(stamp).json", isDirectory: false)
+            let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .prettyPrinted])
+            try data.prefix(1_048_576).write(to: fileURL, options: .atomic)
+            return fileURL.path
+        } catch {
+            SwiftyTubeLog.debug("fetchPlaylist \(playlistId): diagnostic dump failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    static func diagnoseNoShelf(in json: [String: Any]) -> String {
+        var parts: [String] = []
+        parts.append("keys=\(json.keys.sorted().joined(separator: ","))")
+        if let contents = json["contents"] as? [String: Any] {
+            parts.append("contentsKeys=\(contents.keys.sorted().joined(separator: ","))")
+        }
+        if let message = alertRendererText(in: json) {
+            parts.append("alertText=\(message)")
+        }
+        if let message = signInPromptText(in: json) {
+            parts.append("signInMessage=\(message)")
+        }
+        if let responseContext = json["responseContext"] as? [String: Any] {
+            let hasVisitor = responseContext["visitorData"] != nil
+            parts.append("responseVisitorData=\(hasVisitor ? "yes" : "no")")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    static func alertRendererText(in json: [String: Any]) -> String? {
+        var found: String?
+        func text(from renderer: [String: Any]) -> String? {
+            if let alert = renderer["alertRenderer"] as? [String: Any],
+               let text = InnerTubeJSON.runsText(alert["text"] as? [String: Any]) {
+                return text
+            }
+            if let alert = renderer["alertWithButtonRenderer"] as? [String: Any],
+               let text = InnerTubeJSON.runsText(alert["text"] as? [String: Any]) {
+                return text
+            }
+            return nil
+        }
+        if let alerts = json["alerts"] as? [[String: Any]] {
+            for alert in alerts where found == nil {
+                found = text(from: alert)
+            }
+        }
+        return found
+    }
+
+    static func signInPromptText(in json: [String: Any]) -> String? {
+        var messageText: String?
+        var signInLinkFound = false
+        func walk(_ node: Any, depth: Int) {
+            guard depth < 24 else { return }
+            if let dict = node as? [String: Any] {
+                if let messageRenderer = dict["messageRenderer"] as? [String: Any], let text =
+                    InnerTubeJSON.runsText(messageRenderer["text"] as? [String: Any])
+                    ?? InnerTubeJSON.runsText(messageRenderer["subtext"] as? [String: Any]),
+                    messageText == nil {
+                    messageText = text
+                }
+                if dict["signInEndpoint"] != nil {
+                    signInLinkFound = true
+                }
+                for value in dict.values { walk(value, depth: depth + 1) }
+            } else if let array = node as? [Any] {
+                for value in array { walk(value, depth: depth + 1) }
+            }
+        }
+        walk(json, depth: 0)
+        return signInLinkFound ? (messageText ?? "sign-in prompt") : nil
     }
 
     /// Endpoint browse id for a playlist, tolerating ids that already carry
@@ -161,14 +259,13 @@ public actor PlaylistDetailService {
     }
 
     func extractPlaylistItems(from json: [String: Any]) -> [[String: Any]]? {
-        var foundShelf = false
-        var rows: [[String: Any]] = []
-        for shelf in playlistShelves(from: json) {
-            guard let contents = shelf["contents"] as? [[String: Any]] else { continue }
-            foundShelf = true
-            rows += trackRows(contents)
-        }
-        if foundShelf {
+        let shelves = playlistShelves(from: json)
+        if !shelves.isEmpty {
+            var rows: [[String: Any]] = []
+            for shelf in shelves {
+                let contents = shelf["contents"] as? [[String: Any]] ?? []
+                rows += trackRows(contents)
+            }
             return rows
         }
         // Continuation pages for large/private playlists arrive with no shelf
@@ -210,13 +307,20 @@ public actor PlaylistDetailService {
     }
 
     /// Every candidate track shelf in a playlist response, in priority order:
-    /// first-page shelf, two-column shelves, classic continuations.
+    /// browse sections (tabbed single/two-column), two-column secondary
+    /// shelves, classic continuations.
     private func playlistShelves(from json: [String: Any]) -> [[String: Any]] {
         var shelves: [[String: Any]] = []
-        if let firstSection = BrowseLens.firstBrowseSection(json),
-           let shelf = (firstSection["musicPlaylistShelfRenderer"] as? [String: Any])
-            ?? (firstSection["musicShelfRenderer"] as? [String: Any]) {
-            shelves.append(shelf)
+        if let sections = BrowseLens.browseSections(json) {
+            for section in sections {
+                let unwrapped = (section["itemSectionRenderer"] as? [String: Any])
+                    .flatMap { ($0["contents"] as? [[String: Any]])?.first }
+                    ?? section
+                if let shelf = (unwrapped["musicPlaylistShelfRenderer"] as? [String: Any])
+                    ?? (unwrapped["musicShelfRenderer"] as? [String: Any]) {
+                    shelves.append(shelf)
+                }
+            }
         }
         shelves += twoColumnShelves(from: json)
         if let continuationContents = json["continuationContents"] as? [String: Any] {

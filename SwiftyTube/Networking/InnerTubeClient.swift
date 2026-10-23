@@ -264,6 +264,10 @@ public actor InnerTubeClient {
         case InnerTubeError.decodingFailed, InnerTubeError.invalidResponse:
             // A 200 with an undecodable body will not recover by retrying.
             return false
+        case is CancellationError:
+            return false
+        case let urlError as URLError:
+            return urlError.code != .cancelled
         default:
             return true
         }

@@ -117,20 +117,28 @@ public enum StreamFallback: Sendable {
         }
 
         var poTokenTask: Task<PoTokenResult?, Never>?
+        if providers.poTokenProvider != nil,
+           request.chain.contains(where: { $0.client.useWebPoTokens }) {
+            let videoId = request.videoId
+            poTokenTask = Task { await providers.poTokenProvider?(videoId) }
+        }
         defer { poTokenTask?.cancel() }
+
+        func poTokenOptions() async -> (poToken: String?, streamingDataPoToken: String?) {
+            guard let poTokenTask else { return (nil, nil) }
+            let resolved = await poTokenTask.value
+            return (resolved?.playerRequestPoToken, resolved?.streamingDataPoToken)
+        }
 
         var lastError: Error?
         var nonAACFallback: PlaybackResult?
 
         for entry in request.chain {
             var options = request.options
-            if entry.client.useWebPoTokens, let provider = providers.poTokenProvider {
-                if poTokenTask == nil {
-                    let videoId = request.videoId
-                    poTokenTask = Task { await provider(videoId) }
-                }
-                options.poToken = await poTokenTask?.value?.playerRequestPoToken ?? options.poToken
-                options.streamingDataPoToken = await poTokenTask?.value?.streamingDataPoToken
+            if entry.client.useWebPoTokens, poTokenTask != nil {
+                let minted = await poTokenOptions()
+                options.poToken = minted.poToken ?? options.poToken
+                options.streamingDataPoToken = minted.streamingDataPoToken
                     ?? options.streamingDataPoToken
             }
 

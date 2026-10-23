@@ -332,6 +332,59 @@ struct PlaylistContinuationTests {
         #expect(await service.extractPlaylistContinuation(from: [:]) == nil)
     }
 
+    private func singleColumnPlaylistPage(_ shelfContents: [[String: Any]]) -> [String: Any] {
+        let shelf = ["musicPlaylistShelfRenderer": ["contents": shelfContents]]
+        let section = ["itemSectionRenderer": ["contents": [shelf]]]
+        let sectionList = ["sectionListRenderer": ["contents": [section]]]
+        let tab = ["tabRenderer": ["content": sectionList]]
+        let tabs = ["tabs": [tab]]
+        return ["contents": ["singleColumnBrowseResultsRenderer": tabs]]
+    }
+
+    @Test("Single-column tabbed shelf with itemSection wrapper parses rows")
+    func singleColumnPlaylist() async {
+        let json = singleColumnPlaylistPage([track("v1"), track("v2")])
+        let service = service()
+        let items = await service.extractPlaylistItems(from: json)
+        #expect(items?.count == 2)
+    }
+
+    @Test("Empty shelf with no contents key returns an empty snapshot, not an error")
+    func emptyShelf() async {
+        let json = singleColumnPlaylistPage([])
+        let service = service()
+        let items = await service.extractPlaylistItems(from: json)
+        #expect(items != nil)
+        #expect(items?.isEmpty == true)
+    }
+
+    /// Guest (or expired-session) LM browse: messageRenderer + sign-in
+    /// endpoint instead of any shelf.
+    private func guestSignInPage() -> [String: Any] {
+        let prompt = ["messageRenderer": [
+            "text": ["runs": [["text": "Looking for what you've liked?"]]],
+            "button": ["buttonRenderer": [
+                "navigationEndpoint": ["signInEndpoint": ["hack": true]]
+            ]]
+        ]]
+        let section = ["itemSectionRenderer": ["contents": [prompt]]]
+        let sectionList = ["sectionListRenderer": ["contents": [section]]]
+        let tab = ["tabRenderer": ["content": sectionList]]
+        return ["contents": ["singleColumnBrowseResultsRenderer": ["tabs": [tab]]]]
+    }
+
+    @Test("Sign-in prompt response surfaces the sessionExpired diagnostic")
+    func signInPrompt() async {
+        let json = guestSignInPage()
+        let service = service()
+        #expect(await service.extractPlaylistItems(from: json) == nil)
+        #expect(PlaylistDetailService.signInPromptText(in: json) == "Looking for what you've liked?")
+        let detail = PlaylistDetailService.diagnoseNoShelf(in: json)
+        #expect(detail.contains("keys=contents"))
+        #expect(detail.contains("signInMessage="))
+        #expect(PlaylistDetailService.signInPromptText(in: playlistPage([track("v1")])) == nil)
+    }
+
     @Test("Browse id tolerates ids that already carry the VL prefix")
     func browseIdPrefix() {
         #expect(PlaylistDetailService.requestBrowseId(for: "PLabc") == "VLPLabc")

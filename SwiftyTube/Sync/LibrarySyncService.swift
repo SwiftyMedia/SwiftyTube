@@ -23,35 +23,39 @@ public actor LibrarySyncService {
         onLikesRefresh: (@Sendable () async -> Void)? = nil
     ) async -> LibrarySyncResult {
         var result = LibrarySyncResult()
+        let logFailure: (String, Error) -> Void = { section, error in
+            let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            SwiftyTubeLog.error("\(section) error: \(error) (\(detail))")
+        }
         if options.syncArtists {
             do {
                 result.artistIds = try await syncSubscribedArtists()
                 result.completedSections += 1
-            } catch { SwiftyTubeLog.error("syncSubscribedArtists error: \(error)") }
+            } catch { logFailure("syncSubscribedArtists", error) }
         }
         if options.syncPlaylists {
             do {
                 result.playlistIds = try await syncLikedPlaylists()
                 result.completedSections += 1
-            } catch { SwiftyTubeLog.error("syncLikedPlaylists error: \(error)") }
+            } catch { logFailure("syncLikedPlaylists", error) }
         }
         if options.syncAlbums {
             do {
                 result.albumIds = try await syncSavedAlbums()
                 result.completedSections += 1
-            } catch { SwiftyTubeLog.error("syncSavedAlbums error: \(error)") }
+            } catch { logFailure("syncSavedAlbums", error) }
         }
         if options.syncPodcasts {
             do {
                 result.podcastIds = try await syncSubscribedPodcasts()
                 result.completedSections += 1
-            } catch { SwiftyTubeLog.error("syncPodcasts error: \(error)") }
+            } catch { logFailure("syncPodcasts", error) }
         }
         if options.syncSongs {
             do {
                 result.songIds = try await syncLikedSongs()
                 result.completedSections += 1
-            } catch { SwiftyTubeLog.error("syncLikedSongs error: \(error)") }
+            } catch { logFailure("syncLikedSongs", error) }
         }
         if let onLikesRefresh {
             await onLikesRefresh()

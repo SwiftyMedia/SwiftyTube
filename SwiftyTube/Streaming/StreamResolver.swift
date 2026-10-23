@@ -303,7 +303,7 @@ public enum StreamResolver: Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = 10
+        request.timeoutInterval = 5
         request.setValue("bytes=0-1023", forHTTPHeaderField: "Range")
 
         do {

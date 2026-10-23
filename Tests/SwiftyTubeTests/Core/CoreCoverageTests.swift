@@ -82,8 +82,11 @@ struct CoreCoverageTests {
     func errors() {
         let innerTube: [InnerTubeError] = [
             .invalidResponse,
+            .invalidResponseContent("sign-in"),
             .httpError(statusCode: 500, data: Data()),
-            .decodingFailed
+            .decodingFailed,
+            .truncatedResponse("tok"),
+            .sessionExpired
         ]
         for error in innerTube {
             #expect((error.errorDescription ?? "").isEmpty == false)

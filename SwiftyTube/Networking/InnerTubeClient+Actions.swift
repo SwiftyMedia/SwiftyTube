@@ -17,12 +17,12 @@ public extension InnerTubeClient {
         let sapisid = await store.sapisid()
         let visitorData = await store.visitorData()
         let dataSyncId = await store.dataSyncId()
-        print("[Auth] loadState: cookies=\(cookies.count) sapisid=\(sapisid != nil ? "yes" : "no") visitorData=\(visitorData != nil ? "yes" : "no") dataSyncId=\(dataSyncId != nil ? "yes" : "no")")
+        SwiftyTubeLog.debug("[Auth] loadState: cookies=\(cookies.count) sapisid=\(sapisid != nil ? "yes" : "no") visitorData=\(visitorData != nil ? "yes" : "no") dataSyncId=\(dataSyncId != nil ? "yes" : "no")")
         if let sapisid {
-            print("[Auth] sapisid prefix: \(sapisid.prefix(20))...")
+            SwiftyTubeLog.debug("[Auth] sapisid prefix: \(sapisid.prefix(6))...")
         }
         if let visitorData {
-            print("[Auth] visitorData prefix: \(visitorData.prefix(30))...")
+            SwiftyTubeLog.debug("[Auth] visitorData prefix: \(visitorData.prefix(6))...")
         }
         auth = AuthState(
             cookies: cookies,
@@ -63,14 +63,14 @@ public extension InnerTubeClient {
             guard let videoDetails = playerJSON["videoDetails"] as? [String: Any],
                   let channelId = videoDetails["channelId"] as? String,
                   channelId.hasPrefix("UC") else {
-                print("[AvatarResolve] no channelId videoId=\(videoId)")
+                SwiftyTubeLog.debug("[AvatarResolve] no channelId videoId=\(videoId)")
                 return nil
             }
             let channelJSON = try await browse(browseId: channelId, client: .web)
             let avatar = YouTubeChannelParser.avatarURL(in: channelJSON)
             return avatar
         } catch {
-            print("[AvatarResolve] failed videoId=\(videoId) error=\(error)")
+            SwiftyTubeLog.debug("[AvatarResolve] failed videoId=\(videoId) error=\(error)")
             return nil
         }
     }

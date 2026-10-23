@@ -42,7 +42,7 @@ enum RequestBuilder: Sendable {
                     .joined(separator: "; ")
                 request.setValue(cookieString, forHTTPHeaderField: "Cookie")
             } else {
-                print("[Auth] loginSupported but no cookies")
+                SwiftyTubeLog.debug("[Auth] loginSupported but no cookies")
             }
             if let sapisid = auth.sapisid {
                 request.setValue(
@@ -50,7 +50,7 @@ enum RequestBuilder: Sendable {
                     forHTTPHeaderField: "Authorization"
                 )
             } else {
-                print("[Auth] loginSupported but no sapisid")
+                SwiftyTubeLog.debug("[Auth] loginSupported but no sapisid")
             }
         }
 

@@ -40,8 +40,17 @@ public actor IncrementalSyncService {
         options: LibrarySyncOptions = LibrarySyncOptions(),
         onLikesRefresh: (@Sendable () async -> Void)? = nil
     ) async {
-        // Verify login first
-        guard (try? await client.accountMenu()) != nil else { return }
+        let loginVerified: Bool
+        do {
+            loginVerified = try await client.verifySession()
+        } catch {
+            SwiftyTubeLog.error("Library sync skipped: session check failed: \(error) (\(error.localizedDescription))")
+            loginVerified = false
+        }
+        guard loginVerified else {
+            SwiftyTubeLog.error("Library sync skipped: not signed in")
+            return
+        }
 
         let result = await librarySync.syncAll(options: options, onLikesRefresh: onLikesRefresh)
         guard options.enabledCount > 0, result.completedSections >= options.enabledCount else { return }

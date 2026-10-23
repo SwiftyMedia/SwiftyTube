@@ -40,7 +40,10 @@ public actor PoTokenGenerator: NSObject {
     private func ensureWebView() async throws {
         if webViewReady { return }
         if loadingWebView {
-            while loadingWebView { try await Task.sleep(nanoseconds: 100_000_000) }
+            let deadline = Date().addingTimeInterval(10)
+            while loadingWebView, Date() < deadline {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
             return
         }
 
