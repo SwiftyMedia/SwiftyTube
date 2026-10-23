@@ -33,6 +33,10 @@ player.play(url: result.streamUrl)
 
 Guest (signed-out) use works for public content - skip sign-in.
 
+Sessions captured from a webview have hard requirements (desktop Safari UA,
+poll-not-snap cookie harvest, accounts.google.com round trip for stale
+tokens) — see [Docs/Usage.md "Webview sign-in"](Docs/Usage.md#webview-sign-in).
+
 ## What it covers
 
 Transport (`browse`/`search`/`next`/`player`, likes, playlists, subs), stream resolution (format scoring, 9-client fallback, validation, caches), cipher (player.js, deobfuscation, n-transform, self-healing configs), PoToken minting, session import, Keychain helper. YouTube support (browse ids, search filters, suggestions, and `YouTubeFeedParser`/`YouTubeWatchParser`/`YouTubeChannelParser`/`YouTubeTranscript` for feeds, watch pages, channel tabs and captions). Details with examples: [Docs/Usage](Docs/Usage.md), [Music](Docs/Music.md), [YouTube](Docs/YouTube.md).

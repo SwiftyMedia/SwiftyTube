@@ -92,4 +92,87 @@ struct AccountMenuTests {
         ]
         #expect(BrowseLens.signedInAccount(json) == nil)
     }
+
+    // MARK: - Real server guest shape
+
+    /// What Google actually serves for a session whose rotating
+    /// `__Secure-*PSIDTS` cookies are absent/presented stale: HTTP 200, a
+    /// menu with only compact links (Premium/Settings/Terms/Help/Feedback)
+    /// and no header at all — not even a sign-in button.
+    private func realGuestMenuJSON() -> [String: Any] {
+        [
+            "actions": [
+                ["openPopupAction": [
+                    "popup": ["multiPageMenuRenderer": [
+                        "style": "MENU_STYLE_SHORT",
+                        "sections": [
+                            ["multiPageMenuSectionRenderer": [
+                                "items": [
+                                    ["compactLinkRenderer": [
+                                        "icon": ["iconType": "UNLIMITED"],
+                                        "title": ["runs": [["text": "Get Music Premium"]]]
+                                    ]],
+                                    ["compactLinkRenderer": [
+                                        "icon": ["iconType": "SETTINGS"],
+                                        "title": ["runs": [["text": "Settings"]]]
+                                    ]],
+                                    ["compactLinkRenderer": [
+                                        "icon": ["iconType": "PRIVACY_INFO"],
+                                        "title": ["runs": [["text": "Terms & privacy policy"]]]
+                                    ]],
+                                    ["compactLinkRenderer": [
+                                        "icon": ["iconType": "HELP"],
+                                        "title": ["runs": [["text": "Help"]]]
+                                    ]],
+                                    ["compactLinkRenderer": [
+                                        "icon": ["iconType": "FEEDBACK"],
+                                        "title": ["runs": [["text": "Send feedback"]]]
+                                    ]]
+                                ]
+                            ]]
+                        ]
+                    ]]
+                ]]
+            ],
+            "trackingParams": "CAE"
+        ]
+    }
+
+    @Test("Real guest menu (200 OK, link-only items, no header) verifies not signed in")
+    func realGuestMenuHasNoAccount() {
+        #expect(BrowseLens.signedInAccount(realGuestMenuJSON()) == nil)
+    }
+
+    @Test("extractAccountInfo falls back to Guest for the real menu shape")
+    func extractAccountInfoGuestShape() {
+        let info = InnerTubeClient.extractAccountInfo(from: realGuestMenuJSON())
+        #expect(info.name == "Guest")
+        #expect(info.thumbnailUrl == nil)
+    }
+
+    @Test("extractAccountInfo reads name/photo from the chrome header shape")
+    func extractAccountInfoHeaderShape() {
+        let json: [String: Any] = [
+            "actions": [
+                ["openPopupAction": [
+                    "popup": ["multiPageMenuRenderer": [
+                        "header": ["activeAccountHeaderRenderer": [
+                            "accountName": ["runs": [["text": "Real User"]]],
+                            "email": ["runs": [["text": "r@example.com"]]],
+                            "channelHandle": ["runs": [["text": "@realuser"]]],
+                            "accountPhoto": ["thumbnails": [
+                                ["url": "https://yt3.ggpht.com/small", "width": 32],
+                                ["url": "https://yt3.ggpht.com/big", "width": 96]
+                            ]]
+                        ]]
+                    ]]
+                ]]
+            ]
+        ]
+        let info = InnerTubeClient.extractAccountInfo(from: json)
+        #expect(info.name == "Real User")
+        #expect(info.email == "r@example.com")
+        #expect(info.channelHandle == "@realuser")
+        #expect(info.thumbnailUrl == "https://yt3.ggpht.com/big")
+    }
 }

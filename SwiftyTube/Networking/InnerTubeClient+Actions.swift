@@ -18,12 +18,6 @@ public extension InnerTubeClient {
         let visitorData = await store.visitorData()
         let dataSyncId = await store.dataSyncId()
         SwiftyTubeLog.debug("[Auth] loadState: cookies=\(cookies.count) sapisid=\(sapisid != nil ? "yes" : "no") visitorData=\(visitorData != nil ? "yes" : "no") dataSyncId=\(dataSyncId != nil ? "yes" : "no")")
-        if let sapisid {
-            SwiftyTubeLog.debug("[Auth] sapisid prefix: \(sapisid.prefix(6))...")
-        }
-        if let visitorData {
-            SwiftyTubeLog.debug("[Auth] visitorData prefix: \(visitorData.prefix(6))...")
-        }
         auth = AuthState(
             cookies: cookies,
             sapisid: sapisid,
@@ -168,7 +162,15 @@ public extension InnerTubeClient {
         locale: YouTubeLocale? = nil
     ) async throws -> AccountInfo {
         let json = try await accountMenu(client: client, locale: locale)
-        return Self.extractAccountInfo(from: json)
+        let info = Self.extractAccountInfo(from: json)
+        if info.name.isEmpty || info.name == "Guest" {
+            SwiftyTubeLog.notice("accountInfo: guest-shaped menu — no active account header")
+        } else {
+            SwiftyTubeLog.notice(
+                "accountInfo: name=\(info.name) photo=\(info.thumbnailUrl != nil ? "yes" : "no") email=\(info.email != nil ? "yes" : "no")"
+            )
+        }
+        return info
     }
 
     static func extractAccountInfo(from json: [String: Any]) -> AccountInfo {

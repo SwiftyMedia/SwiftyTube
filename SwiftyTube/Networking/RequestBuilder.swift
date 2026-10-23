@@ -41,16 +41,12 @@ enum RequestBuilder: Sendable {
                     .map { "\($0.key)=\($0.value)" }
                     .joined(separator: "; ")
                 request.setValue(cookieString, forHTTPHeaderField: "Cookie")
-            } else {
-                SwiftyTubeLog.debug("[Auth] loginSupported but no cookies")
             }
             if let sapisid = auth.sapisid {
                 request.setValue(
                     SAPISIDAuth.authorizationHeader(sapisid: sapisid, origin: config.service.origin),
                     forHTTPHeaderField: "Authorization"
                 )
-            } else {
-                SwiftyTubeLog.debug("[Auth] loginSupported but no sapisid")
             }
         }
 

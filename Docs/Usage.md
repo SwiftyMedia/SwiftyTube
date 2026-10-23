@@ -23,6 +23,59 @@ let auth = try SessionImporter.importSession(from: cookieString)
 await tube.loadState(from: store) // re-call after login/logout; store has 4 getters
 ```
 
+### Webview sign-in
+
+When a session is captured from a WKWebView instead of a pasted cookie
+string, three steps are **required**. Skipping any of them produces a
+healthy-looking 200 everywhere while authenticated endpoints (`account/account_menu`,
+liked-songs sync) silently answer as an anonymous guest:
+
+```swift
+// 1. Present Google's login with the DESKTOP Safari user agent - Google
+//    serves a cookie-incomplete mobile flow to mobile UAs.
+webView.customUserAgent = LoginWebviewHarvest.userAgent
+
+// 2. Poll for the harvest; do NOT read the cookie store once. The first
+//    snapshot after the redirect is incomplete - Google reissues the
+//    rotating __Secure-1PSIDTS/3PSIDTS through the redirect chain and the
+//    landing page's first seconds.
+let session = await LoginWebviewHarvest.collectSession(from: webView)
+//    -> (cookies, sapisid); nil after 25s - ask the user to log in again.
+
+// 3. Load it into the client.
+await tube.loadState(from: store)
+```
+
+Rules `collectSession` (and everything below) are built around:
+
+- The session cookie map is the **youtube.com cookie family only**. Google
+  issues one family per auth domain (`.google.com`, `.google.com.hk`, …)
+  with different domain-derived values, and a browser never sends
+  `.google.com` cookies to a youtube.com host — mixing a google family's
+  values into the overlapping youtube names (HSID/SSID/SID/…) makes every
+  request answer as anonymous.
+- Fresh `__Secure-1PSIDTS`/`__Secure-3PSIDTS` tokens live only in that
+  youtube.com family; a session without them is rejected as expired.
+
+### Refreshing a stale session
+
+Google keeps rotating the yt-domain tokens, and a session reconstructed
+from a webview too long ago can go stale overnight. Loading
+music.youtube.com again does not re-mint anything — only a
+**accounts.google.com round trip** does (`SessionTokenRefresher`, same rules
+as above, offscreen). Run it once when `account/account_menu` starts
+answering guest-shaped with a valid-looking session:
+
+```swift
+let reissued = await SessionTokenRefresher.shared.refreshRotatedTokens(baseCookies: savedCookies)
+// empty -> re-login needed; otherwise persist `reissued`, re-call
+// loadState, and confirm via accountInfo() (should be non-guest now)
+```
+
+Keep `shouldContinue` false-able (dismiss/login-already-imported guards) and
+always confirm the refresh worked through `accountInfo()` — a guest-shaped
+menu is the only visible symptom of any of this going wrong.
+
 ## Artwork quality
 
 YouTube serves every size from one URL via a `w<n>-h<n>` hint, and sources
