@@ -78,6 +78,7 @@ struct RequestBuilderTests {
         )
         #expect(loginClient.value(forHTTPHeaderField: "Cookie") == "SID=abc")
         #expect(loginClient.value(forHTTPHeaderField: "Authorization")?.hasPrefix("SAPISIDHASH ") == true)
+        #expect(loginClient.value(forHTTPHeaderField: "X-Goog-AuthUser") == "0")
 
         let noLogin = RequestBuilder.buildRequest(
             config: .youtube,
@@ -88,5 +89,6 @@ struct RequestBuilderTests {
         )
         #expect(noLogin.value(forHTTPHeaderField: "Cookie") == nil)
         #expect(noLogin.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(noLogin.value(forHTTPHeaderField: "X-Goog-AuthUser") == nil)
     }
 }

@@ -72,12 +72,47 @@ public enum YouTubeChannelParser: Sendable {
 
     // MARK: - Helpers
 
+    /// Finds a channel avatar in a channel browse response. New WEB headers
+    /// have appeared with several nested avatar/image layouts, so keep this
+    /// search scoped to the header before falling back to the full response.
+    public static func avatarURL(in json: [String: Any]) -> String? {
+        if let header = json["header"] as? [String: Any],
+           let url = avatarURL(header) {
+            return url
+        }
+        return avatarURL(json)
+    }
+
     private static func avatarURL(_ dict: [String: Any]) -> String? {
+        if let sources = InnerTubeDecode.array(at: ["image", "sources"], in: dict) {
+            return largestURL(sources)
+        }
         if let sources = InnerTubeDecode.array(at: ["image", "avatarViewModel", "image", "sources"], in: dict) {
             return largestURL(sources)
         }
         if let sources = InnerTubeDecode.array(at: ["avatar", "avatarViewModel", "image", "sources"], in: dict) {
             return largestURL(sources)
+        }
+        for (key, value) in dict {
+            let lowerKey = key.lowercased()
+            if lowerKey.contains("avatar") || lowerKey.contains("channelthumbnail") {
+                if let child = value as? [String: Any], let url = avatarURL(child) {
+                    return url
+                }
+                if let children = value as? [[String: Any]] {
+                    for child in children {
+                        if let url = avatarURL(child) { return url }
+                    }
+                }
+            }
+            if let child = value as? [String: Any], let url = avatarURL(child) {
+                return url
+            }
+            if let children = value as? [[String: Any]] {
+                for child in children {
+                    if let url = avatarURL(child) { return url }
+                }
+            }
         }
         return nil
     }

@@ -57,6 +57,40 @@ struct YouTubeFeedParserTests {
         #expect(video?.channelAvatarURL == "https://yt3.ggpht.com/a=s68")
     }
 
+    @Test("search renderer finds nested avatarViewModel sources")
+    func searchNestedChannelAvatar() {
+        let renderer = feedJSON(#"""
+        { "videoRenderer": {
+            "videoId": "search1",
+            "title": { "simpleText": "Search result" },
+            "channelThumbnail": {
+                "avatarViewModel": {
+                    "image": { "sources": [{ "url": "https://yt3.ggpht.com/search=s48", "width": 48, "height": 48 }] }
+                }
+            }
+        } }
+        """#)
+        let video = YouTubeFeedParser.videos(in: renderer).first
+        #expect(video?.channelAvatarURL == "https://yt3.ggpht.com/search=s48")
+    }
+
+    @Test("search renderer finds avatarStackViewModel sources")
+    func searchAvatarStack() {
+        let renderer = feedJSON(#"""
+        { "videoRenderer": {
+            "videoId": "search2",
+            "title": { "simpleText": "Search result" },
+            "metadata": { "avatarStackViewModel": { "avatars": [
+                { "avatarViewModel": { "image": { "sources": [
+                    { "url": "https://yt3.ggpht.com/stack=s48", "width": 48, "height": 48 }
+                ] } } }
+            ] } }
+        } }
+        """#)
+        let video = YouTubeFeedParser.videos(in: renderer).first
+        #expect(video?.channelAvatarURL == "https://yt3.ggpht.com/stack=s48")
+    }
+
     @Test("LIVE length text clears duration and flags the video")
     func liveVideo() {
         let renderer = feedJSON(#"""
@@ -106,6 +140,9 @@ struct YouTubeFeedParserTests {
             "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
             "metadata": { "lockupMetadataViewModel": {
                 "title": { "content": "Lockup title" },
+                "image": { "decoratedAvatarViewModel": { "avatar": { "avatarViewModel": {
+                    "image": { "sources": [{ "url": "avatar", "width": 48, "height": 48 }] }
+                } } } },
                 "metadata": { "contentMetadataViewModel": { "metadataRows": [
                     { "metadataParts": [
                         { "text": { "content": "ChanX", "commandRuns": [
@@ -134,6 +171,7 @@ struct YouTubeFeedParserTests {
         #expect(video?.viewCountText == "9 views")
         #expect(video?.durationSeconds == 83)
         #expect(video?.thumbnailURL == "big")
+        #expect(video?.channelAvatarURL == "avatar")
     }
 
     @Test("lockupViewModel parses a playlist")
@@ -155,6 +193,26 @@ struct YouTubeFeedParserTests {
         #expect(playlist?.playlistId == "PL1")
         #expect(playlist?.title == "My List")
         #expect(playlist?.thumbnailURL == "p")
+    }
+
+    @Test("lockupViewModel reads direct metadata avatar image sources")
+    func lockupDirectMetadataAvatar() {
+        let renderer = feedJSON(#"""
+        { "lockupViewModel": {
+            "contentId": "music1",
+            "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+            "metadata": { "lockupMetadataViewModel": {
+                "title": { "content": "Music video" },
+                "image": { "sources": [{ "url": "metadata-avatar", "width": 48, "height": 48 }] }
+            } },
+            "contentImage": { "thumbnailViewModel": { "image": { "sources": [
+                { "url": "video-thumbnail", "width": 1280, "height": 720 }
+            ] } } }
+        } }
+        """#)
+        let video = YouTubeFeedParser.videos(in: renderer).first
+        #expect(video?.thumbnailURL == "video-thumbnail")
+        #expect(video?.channelAvatarURL == "metadata-avatar")
     }
 
     @Test("Continuation reads both command and legacy shapes")

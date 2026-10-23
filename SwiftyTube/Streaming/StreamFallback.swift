@@ -100,6 +100,7 @@ public struct StreamResolveRequest: Sendable {
 public enum VideoStream: Sendable {
     case muxed(String)
     case split(video: String, audio: String, duration: Int?)
+    case hls(String)
 }
 
 /// Shared fallback loops (player wiring stays in apps).
@@ -222,6 +223,12 @@ public enum StreamFallback: Sendable {
                     continue
                 }
 
+                // Keep HLS as a fallback. VOD responses can expose both an
+                // HLS manifest and direct formats; direct URLs start much
+                // faster in embedded players. Live responses often expose
+                // only HLS, so it remains available below.
+                let hlsURL = streamingData.hlsManifestUrl
+
                 let allFormats = (streamingData.formats ?? []) + (streamingData.adaptiveFormats ?? [])
 
                 if let muxed = FormatSelector.bestVideoFormat(from: allFormats),
@@ -242,6 +249,10 @@ public enum StreamFallback: Sendable {
                     } catch {
                         lastError = error
                     }
+                }
+
+                if let hlsURL, !hlsURL.isEmpty {
+                    return .hls(hlsURL)
                 }
             } catch {
                 lastError = error

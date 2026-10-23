@@ -225,6 +225,12 @@ struct StreamingCoverageTests {
         } else {
             Issue.record("wrong case")
         }
+        let hls = VideoStream.hls("https://example/live.m3u8")
+        if case .hls(let url) = hls {
+            #expect(url == "https://example/live.m3u8")
+        } else {
+            Issue.record("wrong case")
+        }
     }
 
     @Test("Request defaults")

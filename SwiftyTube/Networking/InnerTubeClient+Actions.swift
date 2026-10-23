@@ -13,11 +13,22 @@ public extension InnerTubeClient {
 
     /// Loads persisted session fields from the app's store.
     func loadState(from store: any AuthStateProvider) async {
+        let cookies = await store.cookies()
+        let sapisid = await store.sapisid()
+        let visitorData = await store.visitorData()
+        let dataSyncId = await store.dataSyncId()
+        print("[Auth] loadState: cookies=\(cookies.count) sapisid=\(sapisid != nil ? "yes" : "no") visitorData=\(visitorData != nil ? "yes" : "no") dataSyncId=\(dataSyncId != nil ? "yes" : "no")")
+        if let sapisid {
+            print("[Auth] sapisid prefix: \(sapisid.prefix(20))...")
+        }
+        if let visitorData {
+            print("[Auth] visitorData prefix: \(visitorData.prefix(30))...")
+        }
         auth = AuthState(
-            cookies: await store.cookies(),
-            sapisid: await store.sapisid(),
-            visitorData: await store.visitorData(),
-            dataSyncId: await store.dataSyncId()
+            cookies: cookies,
+            sapisid: sapisid,
+            visitorData: visitorData,
+            dataSyncId: dataSyncId
         )
     }
 
@@ -40,6 +51,28 @@ public extension InnerTubeClient {
         }
         DurationCache.set(videoId, duration)
         return duration
+    }
+
+    /// Resolves a channel avatar when a feed/search renderer omits it.
+    /// Search lockups can contain the channel name but neither channel ID nor
+    /// avatar; `/player` provides the ID and the channel header provides the
+    /// canonical avatar image.
+    func resolveChannelAvatar(videoId: String) async -> String? {
+        do {
+            let playerJSON = try await player(videoId: videoId, client: .iOS)
+            guard let videoDetails = playerJSON["videoDetails"] as? [String: Any],
+                  let channelId = videoDetails["channelId"] as? String,
+                  channelId.hasPrefix("UC") else {
+                print("[AvatarResolve] no channelId videoId=\(videoId)")
+                return nil
+            }
+            let channelJSON = try await browse(browseId: channelId, client: .web)
+            let avatar = YouTubeChannelParser.avatarURL(in: channelJSON)
+            return avatar
+        } catch {
+            print("[AvatarResolve] failed videoId=\(videoId) error=\(error)")
+            return nil
+        }
     }
 
     /// Cached duration, else fetch. Nil while another task fetches.
@@ -100,9 +133,11 @@ public extension InnerTubeClient {
     /// Account menu (verifies signed-in state).
     func accountMenu(
         client: YouTubeClient? = nil,
-        locale: YouTubeLocale? = nil
+        locale: YouTubeLocale? = nil,
+        poToken: String? = nil
     ) async throws -> [String: Any] {
-        let body = ["context": contextDict(client: client, locale: locale)]
+        var body: [String: Any] = ["context": contextDict(client: client, locale: locale)]
+        if let poToken { body["serviceIntegrityDimensions"] = ["poToken": poToken] }
         return try await post(endpoint: "account/account_menu", body: body, client: client)
     }
 
@@ -125,7 +160,7 @@ public extension InnerTubeClient {
         return Self.extractAccountInfo(from: json)
     }
 
-    private static func extractAccountInfo(from json: [String: Any]) -> AccountInfo {
+    static func extractAccountInfo(from json: [String: Any]) -> AccountInfo {
         guard let actions = json["actions"] as? [[String: Any]],
               let first = actions.first,
               let openPopup = first["openPopupAction"] as? [String: Any],

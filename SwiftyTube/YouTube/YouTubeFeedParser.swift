@@ -121,7 +121,17 @@ public enum YouTubeFeedParser: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let isLive = lengthText?.uppercased() == "LIVE" || hasLiveBadge(renderer)
         let duration = (isLive || lengthText == nil) ? nil : DurationFormat.parseClock(lengthText ?? "")
-        let viewCount = InnerTubeDecode.runsTextTolerant(renderer["viewCountText"])
+        let channelAvatar = InnerTubeDecode.array(
+            at: ["avatar", "decoratedAvatarViewModel", "avatar", "avatarViewModel", "image", "sources"], in: renderer
+        ) ?? InnerTubeDecode.array(
+            at: ["channelThumbnailSupportedRenderers", "channelThumbnailWithLinkRenderer", "thumbnail", "thumbnails"], in: renderer
+        ) ?? InnerTubeDecode.array(
+            at: ["channelThumbnail", "thumbnails"], in: renderer
+        )
+        let channelAvatarURL = InnerTubeDecode.thumbnailURLTolerant(
+            ["thumbnails": channelAvatar ?? []]
+        ) ?? avatarURL(in: renderer)
+let viewCount = InnerTubeDecode.runsTextTolerant(renderer["viewCountText"])
             ?? InnerTubeDecode.runsTextTolerant(renderer["shortViewCountText"])
         let shortViewCount = InnerTubeDecode.runsTextTolerant(renderer["shortViewCountText"])
             ?? InnerTubeDecode.runsTextTolerant(renderer["viewCountText"])
@@ -132,9 +142,7 @@ public enum YouTubeFeedParser: Sendable {
             channelId: byline?.channelId,
             durationSeconds: duration,
             thumbnailURL: InnerTubeDecode.thumbnailURLTolerant(renderer),
-            channelAvatarURL: InnerTubeDecode.thumbnailURLTolerant(
-                renderer["channelThumbnail"] as? [String: Any]
-            ),
+            channelAvatarURL: channelAvatarURL,
             viewCountText: viewCount,
             shortViewCountText: shortViewCount,
             publishedTimeText: InnerTubeDecode.runsTextTolerant(renderer["publishedTimeText"]),
@@ -190,6 +198,7 @@ public enum YouTubeFeedParser: Sendable {
             channelId: info.channelId,
             durationSeconds: lockupDuration(lockup),
             thumbnailURL: lockupThumbnail(lockup),
+            channelAvatarURL: lockupChannelAvatar(lockup),
             viewCountText: info.viewCount,
             publishedTimeText: info.published,
             isLive: lockupIsLive(lockup),
@@ -288,6 +297,54 @@ public enum YouTubeFeedParser: Sendable {
         }.first { $0.hasPrefix("UC") }
     }
 
+    /// Channel avatar from lockup metadata rows (WEB client).
+    static func lockupChannelAvatar(_ lockup: [String: Any]) -> String? {
+        // Some music/search lockups omit decoratedAvatarViewModel and place
+        // the channel image directly in lockupMetadataViewModel.image. This
+        // is safe because the video's thumbnail is separate under contentImage.
+        if let sources = InnerTubeDecode.array(
+            at: ["metadata", "lockupMetadataViewModel", "image", "sources"],
+            in: lockup
+        ), let url = sourceURL(sources) {
+            return url
+        }
+
+        if let sources = InnerTubeDecode.array(
+            at: [
+                "metadata", "lockupMetadataViewModel", "image",
+                "decoratedAvatarViewModel", "avatar", "avatarViewModel",
+                "image", "sources"
+            ], in: lockup
+        ) {
+            return sourceURL(sources)
+        }
+
+        if let url = avatarURL(in: lockup) {
+            return url
+        }
+
+        guard let container = InnerTubeDecode.dict(
+            at: ["metadata", "lockupMetadataViewModel", "metadata", "contentMetadataViewModel"],
+            in: lockup
+        ), let rows = container["metadataRows"] as? [[String: Any]] else {
+            return nil
+        }
+        for row in rows {
+            for part in (row["metadataParts"] as? [[String: Any]]) ?? [] {
+                if let sources = InnerTubeDecode.array(at: ["thumbnail", "thumbnailViewModel", "image", "sources"], in: part) {
+                    return sourceURL(sources)
+                }
+                if let sources = InnerTubeDecode.array(at: ["thumbnail", "image", "sources"], in: part) {
+                    return sourceURL(sources)
+                }
+                if let sources = InnerTubeDecode.array(at: ["thumbnail", "thumbnails"], in: part) {
+                    return sourceURL(sources)
+                }
+            }
+        }
+        return nil
+    }
+
     private static func lockupThumbnail(_ lockup: [String: Any]) -> String? {
         // contentImage.thumbnailViewModel.image.sources, or the collection
         // variant's primaryThumbnail.
@@ -312,6 +369,37 @@ public enum YouTubeFeedParser: Sendable {
             ((($0["width"] as? Int) ?? 0) * (($0["height"] as? Int) ?? 0))
                 < ((($1["width"] as? Int) ?? 0) * (($1["height"] as? Int) ?? 0))
         }?["url"] as? String
+    }
+
+    /// Finds avatar-specific image sources across WEB search renderer variants.
+    /// It only returns images reached through avatar/channel-thumbnail keys, so
+    /// a video's main thumbnail is never mistaken for its channel avatar.
+    private static func avatarURL(in value: Any) -> String? {
+        guard let dict = value as? [String: Any] else { return nil }
+        for (key, child) in dict {
+            let lowerKey = key.lowercased()
+            if lowerKey.contains("avatar") || lowerKey.contains("channelthumbnail") {
+                if let childDict = child as? [String: Any] {
+                    if let sources = InnerTubeDecode.array(at: ["image", "sources"], in: childDict),
+                       let url = sourceURL(sources) { return url }
+                    if let sources = InnerTubeDecode.array(at: ["avatarViewModel", "image", "sources"], in: childDict),
+                       let url = sourceURL(sources) { return url }
+                    if let url = InnerTubeDecode.thumbnailURLTolerant(childDict) { return url }
+                }
+                if let childArray = child as? [[String: Any]] {
+                    for item in childArray {
+                        if let url = avatarURL(in: item) { return url }
+                    }
+                }
+            }
+            if let childDict = child as? [String: Any], let url = avatarURL(in: childDict) { return url }
+            if let childArray = child as? [[String: Any]] {
+                for item in childArray {
+                    if let url = avatarURL(in: item) { return url }
+                }
+            }
+        }
+        return nil
     }
 
     private static func lockupDuration(_ lockup: [String: Any]) -> Int? {

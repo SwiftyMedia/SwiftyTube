@@ -88,12 +88,16 @@ public struct YouTubeClient: Sendable, Hashable, Codable {
     /// Main YouTube web default.
     public static let web = YouTubeClient(
         clientName: "WEB",
-        clientVersion: "2.20260707.12.00",
+        clientVersion: "2.20261002.01.00",
         clientId: 1,
         userAgent: webUserAgent,
         loginSupported: true,
+        includeUserAgentInContext: true,
         useSignatureTimestamp: true,
-        useWebPoTokens: true
+        useWebPoTokens: true,
+        osName: "Windows",
+        osVersion: "10.0",
+        platform: "DESKTOP"
     )
 
     /// Lightweight duration / metadata fetch, no cipher needed.

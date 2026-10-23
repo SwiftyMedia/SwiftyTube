@@ -81,6 +81,7 @@ public struct StreamingData: Decodable, Sendable {
     public let formats: [Format]?
     public let adaptiveFormats: [Format]?
     public let expiresInSeconds: String?
+    public let hlsManifestUrl: String?
 
     public var expiresInSecondsValue: Int? {
         expiresInSeconds.flatMap { Int($0) }

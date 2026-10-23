@@ -33,17 +33,24 @@ enum RequestBuilder: Sendable {
         }
 
         if client.loginSupported {
+            // YouTube's web client expects the active Google account index on
+            // authenticated InnerTube requests. The default account is 0.
+            request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
             if !auth.cookies.isEmpty {
                 let cookieString = auth.cookies
                     .map { "\($0.key)=\($0.value)" }
                     .joined(separator: "; ")
                 request.setValue(cookieString, forHTTPHeaderField: "Cookie")
+            } else {
+                print("[Auth] loginSupported but no cookies")
             }
             if let sapisid = auth.sapisid {
                 request.setValue(
                     SAPISIDAuth.authorizationHeader(sapisid: sapisid, origin: config.service.origin),
                     forHTTPHeaderField: "Authorization"
                 )
+            } else {
+                print("[Auth] loginSupported but no sapisid")
             }
         }
 
@@ -91,6 +98,7 @@ enum RequestBuilder: Sendable {
         }
 
         if client.loginSupported {
+            request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
             if !auth.cookies.isEmpty {
                 let cookieString = auth.cookies
                     .map { "\($0.key)=\($0.value)" }
