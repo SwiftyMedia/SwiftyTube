@@ -105,10 +105,4 @@ public struct SignedInAccount: Sendable, Equatable {
     public let name: String?
     public let email: String?
     public let hasPhoto: Bool
-
-    init(name: String?, email: String?, hasPhoto: Bool) {
-        self.name = name
-        self.email = email
-        self.hasPhoto = hasPhoto
-    }
 }

@@ -17,7 +17,12 @@ public extension InnerTubeClient {
         let sapisid = await store.sapisid()
         let visitorData = await store.visitorData()
         let dataSyncId = await store.dataSyncId()
-        SwiftyTubeLog.debug("[Auth] loadState: cookies=\(cookies.count) sapisid=\(sapisid != nil ? "yes" : "no") visitorData=\(visitorData != nil ? "yes" : "no") dataSyncId=\(dataSyncId != nil ? "yes" : "no")")
+        SwiftyTubeLog.debug(
+            "[Auth] loadState: cookies=\(cookies.count)"
+                + " sapisid=\(sapisid != nil ? "yes" : "no")"
+                + " visitorData=\(visitorData != nil ? "yes" : "no")"
+                + " dataSyncId=\(dataSyncId != nil ? "yes" : "no")"
+        )
         auth = AuthState(
             cookies: cookies,
             sapisid: sapisid,
@@ -152,7 +157,11 @@ public extension InnerTubeClient {
             }
             return false
         }
-        SwiftyTubeLog.debug("verifySession: signed in as \(identity.name ?? "?") email=\(identity.email != nil ? "yes" : "no") photo=\(identity.hasPhoto ? "yes" : "no")")
+        SwiftyTubeLog.debug(
+            "verifySession: signed in as \(identity.name ?? "?")"
+                + " email=\(identity.email != nil ? "yes" : "no")"
+                + " photo=\(identity.hasPhoto ? "yes" : "no")"
+        )
         return true
     }
 
@@ -232,6 +241,28 @@ public extension InnerTubeClient {
             "target": ["videoId": videoId]
         ]
         return try await post(endpoint: "like/dislike", body: body, client: client)
+    }
+
+    /// Rates a playlist/album — this is what YouTube Music's
+    /// "Save to library" / "Remove from library" actions call.
+    /// `rating` is `LIKE` (save), `INDIFFERENT` (remove), or `DISLIKE`.
+    func ratePlaylist(
+        playlistId: String,
+        rating: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let endpoint: String
+        switch rating {
+        case "INDIFFERENT": endpoint = "like/removelike"
+        case "DISLIKE": endpoint = "like/dislike"
+        default: endpoint = "like/like"
+        }
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "target": ["playlistId": playlistId]
+        ]
+        return try await post(endpoint: endpoint, body: body, client: client)
     }
 
     // MARK: - Transcripts

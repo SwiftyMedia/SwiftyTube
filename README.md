@@ -11,7 +11,7 @@ iOS 17+ / macOS 13+, Swift 5.9+, Xcode 16+. No third-party dependencies.
 **File → Add Package Dependencies**, enter the repo URL:
 
 ```swift
-.package(url: "https://github.com/686udjie/SwiftyTube.git", from: "0.0.3")
+.package(url: "https://github.com/686udjie/SwiftyTube.git", from: "x.x.x")
 ```
 
 Add `SwiftyTube` to your target, then `import SwiftyTube`.
