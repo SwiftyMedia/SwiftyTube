@@ -56,7 +56,7 @@ public enum CommentsParser {
                 guard let base = makeComment(
                     entity: entity,
                     viewModel: viewModel,
-                    toolbarStates: entities.toolbarStates,
+                    entities: entities,
                     isThread: true
                 ) else { continue }
 
@@ -108,7 +108,7 @@ public enum CommentsParser {
             guard var reply = makeComment(
                 entity: entity,
                 viewModel: viewModel,
-                toolbarStates: entities.toolbarStates,
+                entities: entities,
                 isThread: false
             ) else { return }
             reply.replyCount = 0
@@ -145,6 +145,7 @@ public enum CommentsParser {
     private struct Entities {
         var comments: [String: [String: Any]]
         var toolbarStates: [String: [String: Any]]
+        var toolbarSurfaces: [String: [String: Any]]
     }
 
     private static func buildEntities(from json: [String: Any]) -> Entities {
@@ -153,6 +154,7 @@ public enum CommentsParser {
             ?? []
         var comments: [String: [String: Any]] = [:]
         var toolbarStates: [String: [String: Any]] = [:]
+        var toolbarSurfaces: [String: [String: Any]] = [:]
 
         for mutation in mutations {
             guard let payload = mutation["payload"] as? [String: Any] else { continue }
@@ -164,8 +166,12 @@ public enum CommentsParser {
                 let key = (toolbar["key"] as? String) ?? (mutation["entityKey"] as? String)
                 if let key { toolbarStates[key] = toolbar }
             }
+            if let surface = payload["engagementToolbarSurfaceEntityPayload"] as? [String: Any] {
+                let key = (surface["key"] as? String) ?? (mutation["entityKey"] as? String)
+                if let key { toolbarSurfaces[key] = surface }
+            }
         }
-        return Entities(comments: comments, toolbarStates: toolbarStates)
+        return Entities(comments: comments, toolbarStates: toolbarStates, toolbarSurfaces: toolbarSurfaces)
     }
 
     private static func collectActions(from json: [String: Any]) -> [[String: Any]] {
@@ -192,7 +198,7 @@ public enum CommentsParser {
     private static func makeComment(
         entity: [String: Any]?,
         viewModel: [String: Any]?,
-        toolbarStates: [String: [String: Any]],
+        entities: Entities,
         isThread: Bool
     ) -> CommentItem? {
         guard let entity,
@@ -204,10 +210,15 @@ public enum CommentsParser {
         let toolbar = entity["toolbar"] as? [String: Any] ?? [:]
         let stateKey = (viewModel?["toolbarStateKey"] as? String)
             ?? (props["toolbarStateKey"] as? String)
-        let state = stateKey.flatMap { toolbarStates[$0] }
-        let likeText = stringValue(toolbar["likeCountNotliked"])
+        let state = stateKey.flatMap { entities.toolbarStates[$0] }
+        let voteState = voteState(from: state?["likeState"] as? String)
+        let likeText = stringValue(voteState == .liked ? toolbar["likeCountLiked"] : toolbar["likeCountNotliked"])
+            ?? stringValue(toolbar["likeCountNotliked"])
             ?? stringValue(toolbar["likeCountLiked"])
             ?? ""
+
+        let surfaceKey = viewModel?["toolbarSurfaceKey"] as? String
+        let surface = surfaceKey.flatMap { entities.toolbarSurfaces[$0] }
 
         return CommentItem(
             id: id,
@@ -220,8 +231,29 @@ public enum CommentsParser {
             pinnedText: nil,
             replyCount: isThread ? parseCompactNumber(toolbar["replyCount"]) : 0,
             replyCountText: isThread ? (stringValue(toolbar["replyCount"]) ?? "") : "",
-            replyContinuation: nil
+            replyContinuation: nil,
+            voteState: voteState,
+            likeAction: actionToken(in: surface, command: "likeCommand"),
+            unlikeAction: actionToken(in: surface, command: "unlikeCommand"),
+            dislikeAction: actionToken(in: surface, command: "dislikeCommand"),
+            undislikeAction: actionToken(in: surface, command: "undislikeCommand")
         )
+    }
+
+    private static func voteState(from likeState: String?) -> CommentVoteState {
+        switch likeState {
+        case "TOOLBAR_LIKE_STATE_LIKED": return .liked
+        case "TOOLBAR_LIKE_STATE_DISLIKED": return .disliked
+        default: return .indifferent
+        }
+    }
+
+    /// The `action` blob of a toolbar command. Signed-out surfaces carry the
+    /// command shape but no `performCommentActionEndpoint`, so this is nil
+    /// unless the viewer is signed in.
+    private static func actionToken(in surface: [String: Any]?, command: String) -> String? {
+        guard let surface else { return nil }
+        return dictionary(surface, command, "innertubeCommand", "performCommentActionEndpoint")?["action"] as? String
     }
 
     private static func makeAuthor(from entity: [String: Any]) -> CommentAuthor {

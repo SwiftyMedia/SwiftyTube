@@ -38,6 +38,13 @@ public struct CommentAuthor: Hashable, Sendable {
     public var isArtist: Bool
 }
 
+/// The viewer's current vote on a comment.
+public enum CommentVoteState: String, Hashable, Sendable {
+    case indifferent
+    case liked
+    case disliked
+}
+
 public struct CommentItem: Identifiable, Hashable, Sendable {
     public var id: String
     public var author: CommentAuthor
@@ -50,6 +57,15 @@ public struct CommentItem: Identifiable, Hashable, Sendable {
     public var replyCount: Int
     public var replyCountText: String
     public var replyContinuation: String?
+    /// Viewer's current vote. Only meaningful together with the action tokens.
+    public var voteState: CommentVoteState = .indifferent
+    /// Server-issued `performCommentActionEndpoint` tokens for the viewer's
+    /// toolbar surface. All nil when signed out — the viewer must sign in
+    /// before any vote can be performed.
+    public var likeAction: String?
+    public var unlikeAction: String?
+    public var dislikeAction: String?
+    public var undislikeAction: String?
 }
 
 public struct CommentsPage: Sendable {

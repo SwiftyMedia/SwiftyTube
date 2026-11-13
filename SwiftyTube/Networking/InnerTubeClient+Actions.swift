@@ -265,6 +265,25 @@ public extension InnerTubeClient {
         return try await post(endpoint: endpoint, body: body, client: client)
     }
 
+    // MARK: - Comments
+
+    /// Votes on a comment (like/unlike/dislike/undislike) by replaying a
+    /// server-issued action token parsed from the comments payload's
+    /// toolbar surface (`performCommentActionEndpoint.action`). The response
+    /// carries no framework updates, so callers update their state locally
+    /// after checking `actionResults[0].status == "STATUS_SUCCEEDED"`.
+    func performCommentAction(
+        action: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "actions": [action]
+        ]
+        return try await post(endpoint: "comment/perform_comment_action", body: body, client: client)
+    }
+
     // MARK: - Transcripts
 
     /// Transcript segments for a video. `params` is the transcript
