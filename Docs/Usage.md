@@ -181,10 +181,9 @@ if let replyToken = comment.replyContinuation {
 
 ```swift
 // Pick the token matching the transition you want:
-let action = comment.voteState == .liked ? comment.unlikeAction
-            : comment.voteState == .disliked ? comment.undislikeAction
-            : direction == .like ? comment.likeAction
-            : comment.dislikeAction
+let action = direction == .like
+    ? (comment.voteState == .liked ? comment.unlikeAction : comment.likeAction)
+    : (comment.voteState == .disliked ? comment.undislikeAction : comment.dislikeAction)
 
 let json = try await tube.performCommentAction(action: action!)
 let ok = (json["actionResults"] as? [[String: Any]])?.first?["status"] as? String == "STATUS_SUCCEEDED"
@@ -277,14 +276,25 @@ let update = CommentsParser.parseReportFlowUpdate(
 - `.steps([[String: Any]])` — advanced; classify each (unwrapped) step with
   `CommentsParser.parseReportStep(_:)` → `step.page`:
   - `.reasons` — reason list (also what the panel returns first)
-  - `.details(CommentReportDetailsPage)` — optional free-text step; set
-    `abuse["userComments"] = text` (respect `page.maxChars`) plus
+  - `.details(CommentReportDetailsPage)` — optional free-text step; read
+    `abuse` from the current `state["abuseReportFlowState"]`, set
+    `abuse["userComments"] = text` (respect `page.maxChars`), then assign it
+    back to `state["abuseReportFlowState"]` alongside
     `state["flowFormState"] = ["isValid": true]` before the next advance
   - `.confirmation` — **the report was accepted**; stop here
   - `.signIn` — YouTube wants a session
 - `.failure(String?)` — the server rejected our state; carries its toast text
   (e.g. `"Something went wrong. Try again later."` when signed out)
 - `.noOp` — 200 without an `updateFlowCommand`; the state wasn't accepted
+
+```swift
+if case .details(let page) = step.page,
+   var abuse = state["abuseReportFlowState"] as? [String: Any] {
+    abuse["userComments"] = String(text.prefix(page.maxChars))
+    state["abuseReportFlowState"] = abuse
+    state["flowFormState"] = ["isValid": true]
+}
+```
 
 After each advance, adopt the replacement entity and re-read its route:
 

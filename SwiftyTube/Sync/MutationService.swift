@@ -315,10 +315,14 @@ public actor MutationService {
         duration: Int = 0
     ) async throws {
         var resolvedPlaylistId = playlistId?.isEmpty == false ? playlistId : nil
+        let fetchedAlbum = try await store.fetchAlbum(id: browseId)
+        if resolvedPlaylistId == nil, let stored = fetchedAlbum?.playlistId, !stored.isEmpty {
+            resolvedPlaylistId = stored
+        }
         if resolvedPlaylistId == nil {
             resolvedPlaylistId = await albumPlaylistId(browseId: browseId)
         }
-        if var existing = try await store.fetchAlbum(id: browseId) {
+        if var existing = fetchedAlbum {
             existing.bookmarkedAt = Date()
             if let thumbnailUrl { existing.thumbnailUrl = thumbnailUrl }
             if let resolvedPlaylistId { existing.playlistId = resolvedPlaylistId }

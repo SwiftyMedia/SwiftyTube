@@ -28,13 +28,6 @@ public enum CommentsParser {
             }
         }
 
-        for item in contents {
-            guard let section = item["itemSectionRenderer"] as? [String: Any],
-                  let token = continuationToken(in: section["contents"]),
-                  token.count > 50 else { continue }
-            return token
-        }
-
         // Music-host / alternate layouts: walk the tree for a comments section id.
         return deepFindCommentsToken(in: json)
     }
@@ -381,7 +374,10 @@ public enum CommentsParser {
         for command in sorted {
             guard let start = command["startIndex"] as? Int,
                   let length = command["length"] as? Int else { continue }
-            guard start >= cursor, start + length <= utf16.count else { continue }
+            guard start >= cursor,
+                  start <= utf16.count,
+                  length >= 0,
+                  length <= utf16.count - start else { continue }
             if start > cursor {
                 runs.append(.text(utf16String(utf16[cursor..<start])))
             }
