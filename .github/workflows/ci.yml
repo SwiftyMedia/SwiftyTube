@@ -7,6 +7,7 @@ on:
 jobs:
   test:
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
@@ -14,4 +15,9 @@ jobs:
       - name: Build
         run: swift build
       - name: Test
-        run: swift test
+        # smoke tests bcs the rest need wifi, test on device before PRing
+        run: >-
+          swift test
+          --skip "InnerTubeLiveTests"
+          --skip "YouTubeParserLiveTests"
+          --skip "StreamingTests/(liveDuration|liveResolveHandler)"
