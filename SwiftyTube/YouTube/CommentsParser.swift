@@ -501,7 +501,7 @@ public enum CommentsParser {
         } else {
             multiplier = 1
         }
-        return Int((number * multiplier).rounded())
+        return Int(exactly: (number * multiplier).rounded()) ?? 0
     }
 
     private static func absoluteYouTubeURL(_ path: String) -> String {

@@ -308,7 +308,7 @@ public extension InnerTubeClient {
             "createCommentParams": params,
             "commentText": text
         ]
-        return try await post(endpoint: "comment/create_comment", body: body, client: client)
+        return try await post(endpoint: "comment/create_comment", body: body, client: client, retryPolicy: .singleAttempt)
     }
 
     /// Votes on a comment (like/unlike/dislike/undislike) by replaying a
@@ -325,7 +325,7 @@ public extension InnerTubeClient {
             "context": contextDict(client: client, locale: locale),
             "actions": [action]
         ]
-        return try await post(endpoint: "comment/perform_comment_action", body: body, client: client)
+        return try await post(endpoint: "comment/perform_comment_action", body: body, client: client, retryPolicy: .singleAttempt)
     }
 
     /// Edits an existing comment: replays the server-issued
@@ -343,7 +343,7 @@ public extension InnerTubeClient {
             "updateCommentParams": params,
             "commentText": text
         ]
-        return try await post(endpoint: "comment/update_comment", body: body, client: client)
+        return try await post(endpoint: "comment/update_comment", body: body, client: client, retryPolicy: .singleAttempt)
     }
 
     /// Opens the comment abuse-report panel. `params` is the Report menu

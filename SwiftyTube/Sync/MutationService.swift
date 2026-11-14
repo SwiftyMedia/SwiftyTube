@@ -320,7 +320,7 @@ public actor MutationService {
             resolvedPlaylistId = stored
         }
         if resolvedPlaylistId == nil {
-            resolvedPlaylistId = await albumPlaylistId(browseId: browseId)
+            resolvedPlaylistId = try await albumPlaylistId(browseId: browseId)
         }
         if var existing = fetchedAlbum {
             existing.bookmarkedAt = Date()
@@ -363,11 +363,13 @@ public actor MutationService {
         if var existing = try await store.fetchAlbum(id: browseId) {
             hadBookmark = existing.bookmarkedAt != nil
             existing.bookmarkedAt = nil
-            if existingPlaylistId == nil { existingPlaylistId = existing.playlistId }
+            if existingPlaylistId == nil, let stored = existing.playlistId, !stored.isEmpty {
+                existingPlaylistId = stored
+            }
             try await store.saveAlbum(existing)
         }
         if existingPlaylistId == nil {
-            existingPlaylistId = await albumPlaylistId(browseId: browseId)
+            existingPlaylistId = try await albumPlaylistId(browseId: browseId)
         }
         guard let pid = existingPlaylistId else {
             SwiftyTubeLog.error("unsaveAlbum: no playlistId for \(browseId), local-only")
@@ -386,8 +388,8 @@ public actor MutationService {
 
     // MARK: - Album playlist resolution
 
-    private func albumPlaylistId(browseId: String) async -> String? {
-        guard let json = try? await client.browse(browseId: browseId) else { return nil }
+    private func albumPlaylistId(browseId: String) async throws -> String? {
+        let json = try await client.browse(browseId: browseId)
         var found: String?
         func walk(_ value: Any) {
             if found != nil { return }

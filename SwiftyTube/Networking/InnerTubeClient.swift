@@ -184,9 +184,10 @@ public actor InnerTubeClient {
     func post(
         endpoint: String,
         body: [String: Any],
-        client: YouTubeClient?
+        client: YouTubeClient?,
+        retryPolicy: RetryPolicy = .innerTube
     ) async throws -> [String: Any] {
-        let data = try await postData(endpoint: endpoint, body: body, client: client)
+        let data = try await postData(endpoint: endpoint, body: body, client: client, retryPolicy: retryPolicy)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw InnerTubeError.decodingFailed
         }
@@ -201,7 +202,8 @@ public actor InnerTubeClient {
     func postData(
         endpoint: String,
         body: [String: Any],
-        client: YouTubeClient?
+        client: YouTubeClient?,
+        retryPolicy: RetryPolicy = .innerTube
     ) async throws -> Data {
         let client = client ?? config.defaultClient
         let requestID = String(UUID().uuidString.prefix(8))
@@ -230,7 +232,7 @@ public actor InnerTubeClient {
                 + " hasAuthUser=\(hasAuthUser) poToken=\(poToken)"
                 + " body=\(Self.bodyDiagnostics(body))"
         )
-        return try await RetryPolicy.innerTube.run(
+        return try await retryPolicy.run(
             { try await Self.postOnce(request: request, session: session, requestID: requestID, endpoint: endpoint) },
             isRetryable: Self.isRetryable,
             onRetry: { attempt, error in

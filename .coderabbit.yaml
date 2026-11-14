@@ -6,35 +6,36 @@ reviews:
     base_branches:
       - main
     drafts: false
-    path_instructions:
-      - path: "SwiftyTube/Auth/**"
-        instructions: |
-          Authentication and secure storage. Keep cookies and tokens out of logs.
-          Preserve actor isolation and Sendable correctness. Fail closed when
-          credentials or session data are missing.
-      - path: "SwiftyTube/Networking/**"
-        instructions: |
-          InnerTube transport and request construction. Preserve retry behavior,
-          auth header handling, request diagnostics, and typed error semantics.
-          Avoid logging cookies, tokens, or other credentials.
-      - path: "SwiftyTube/Streaming/**"
-        instructions: |
-          Streaming and format selection. Prefer safe fallbacks, validate URLs
-          before use, and keep cache expiry and playback error handling intact.
-      - path: "SwiftyTube/Sync/**"
-        instructions: |
-          Library synchronization and mutations. Preserve optimistic rollback,
-          stored identifiers, pagination, and actor isolation. Avoid losing
-          local state when a remote request fails.
-      - path: "SwiftyTube/YouTube/**"
-        instructions: |
-          YouTube response models and parsers. Treat server payloads as
-          untrusted and tolerate missing or malformed fields without trapping.
-          Preserve continuation tokens and parser fallback behavior.
-      - path: "Tests/**"
-        instructions: |
-          Prefer deterministic fixtures for unit tests. Keep live/network smoke
-          tests clearly identified and do not make ordinary CI depend on them.
+
+  path_instructions:
+    - path: "SwiftyTube/Auth/**"
+      instructions: |
+        Authentication and secure storage. Keep cookies and tokens out of logs.
+        Preserve actor isolation and Sendable correctness. Fail closed when
+        credentials or session data are missing.
+    - path: "SwiftyTube/Networking/**"
+      instructions: |
+        InnerTube transport and request construction. Preserve retry behavior,
+        auth header handling, request diagnostics, and typed error semantics.
+        Avoid logging cookies, tokens, or other credentials.
+    - path: "SwiftyTube/Streaming/**"
+      instructions: |
+        Streaming and format selection. Prefer safe fallbacks, validate URLs
+        before use, and keep cache expiry and playback error handling intact.
+    - path: "SwiftyTube/Sync/**"
+      instructions: |
+        Library synchronization and mutations. Preserve optimistic rollback,
+        stored identifiers, pagination, and actor isolation. Avoid losing
+        local state when a remote request fails.
+    - path: "SwiftyTube/YouTube/**"
+      instructions: |
+        YouTube response models and parsers. Treat server payloads as
+        untrusted and tolerate missing or malformed fields without trapping.
+        Preserve continuation tokens and parser fallback behavior.
+    - path: "Tests/**"
+      instructions: |
+        Prefer deterministic fixtures for unit tests. Keep live/network smoke
+        tests clearly identified and do not make ordinary CI depend on them.
 
   request_changes_workflow: true
   collapse_walkthrough: true
@@ -64,16 +65,16 @@ chat:
   auto_reply: true
   integrate_with_bitbucket: false
 
-finishing_touches:
-  custom:
-    - enabled: true
-      name: "SwiftyTube quality check"
-      instructions: |
-        Review changed Swift files for:
-        - Swift naming and access-control conventions
-        - actor isolation and Sendable correctness
-        - no credentials or cookies in logs
-        - guard + early return for malformed payloads
-        - no force unwraps or empty catch blocks
-        - resilient parsing of optional and variant YouTube response shapes
-        - deterministic tests; network-dependent tests must be clearly marked
+  finishing_touches:
+    custom:
+      - enabled: true
+        name: "SwiftyTube quality check"
+        instructions: |
+          Review changed Swift files for:
+          - Swift naming and access-control conventions
+          - actor isolation and Sendable correctness
+          - no credentials or cookies in logs
+          - guard + early return for malformed payloads
+          - no force unwraps or empty catch blocks
+          - resilient parsing of optional and variant YouTube response shapes
+          - deterministic tests; network-dependent tests must be clearly marked
