@@ -53,6 +53,10 @@ let page2 = YouTubeFeedParser.searchResults(in: try await tube.search(query: "sw
 
 Shorts come through the same parsers as `YouTubeFeedParser.videos` with `isShort` set.
 
+`watch.commentsContinuation` seeds the comments API — loading, sorting,
+replies, voting, posting, editing, deleting and reporting are all documented
+in [Usage → Comments](Usage.md#comments).
+
 ## Transcripts
 
 `get_transcript` now requires attestation, so prefer the caption track URL from an

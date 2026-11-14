@@ -201,8 +201,33 @@ public extension InnerTubeClient {
             name: name,
             email: email,
             channelHandle: handle,
-            thumbnailUrl: InnerTubeJSON.lastThumbnailURL(thumbnails)
+            thumbnailUrl: InnerTubeJSON.lastThumbnailURL(thumbnails),
+            channelId: channelAccountId(in: activeAccount)
         )
+    }
+
+    /// The account header links the viewer's own channel. Its nesting varies
+    /// (browse endpoint vs. channel URL), so scan the header subtree for the
+    /// first canonical "UC…" channel id.
+    private static func channelAccountId(in node: Any) -> String? {
+        if let dict = node as? [String: Any] {
+            if let browseId = dict["browseId"] as? String, browseId.hasPrefix("UC") {
+                return browseId
+            }
+            if let url = dict["url"] as? String, let range = url.range(of: "/channel/") {
+                var id = url[range.upperBound...]
+                if let slash = id.firstIndex(of: "/") { id = id[..<slash] }
+                if id.hasPrefix("UC") { return String(id) }
+            }
+            for value in dict.values {
+                if let id = channelAccountId(in: value) { return id }
+            }
+        } else if let array = node as? [Any] {
+            for value in array {
+                if let id = channelAccountId(in: value) { return id }
+            }
+        }
+        return nil
     }
 
     // MARK: - Likes
@@ -263,6 +288,102 @@ public extension InnerTubeClient {
             "target": ["playlistId": playlistId]
         ]
         return try await post(endpoint: endpoint, body: body, client: client)
+    }
+
+    // MARK: - Comments
+
+    /// Posts a top-level comment. `params` is the server-issued
+    /// `createCommentParams` parsed from the comments header's simplebox —
+    /// it embeds the video id, so there is no separate target field. The
+    /// response carries the created comment under `actions[0].createCommentAction`,
+    /// or a `showErrorAction` on failure.
+    func createComment(
+        params: String,
+        text: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "createCommentParams": params,
+            "commentText": text
+        ]
+        return try await post(endpoint: "comment/create_comment", body: body, client: client)
+    }
+
+    /// Votes on a comment (like/unlike/dislike/undislike) by replaying a
+    /// server-issued action token parsed from the comments payload's
+    /// toolbar surface (`performCommentActionEndpoint.action`). The response
+    /// carries no framework updates, so callers update their state locally
+    /// after checking `actionResults[0].status == "STATUS_SUCCEEDED"`.
+    func performCommentAction(
+        action: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "actions": [action]
+        ]
+        return try await post(endpoint: "comment/perform_comment_action", body: body, client: client)
+    }
+
+    /// Edits an existing comment: replays the server-issued
+    /// `updateCommentParams` from the comment's Edit menu item together
+    /// with the new text. The response carries `actionResults` like
+    /// `perform_comment_action`; check for `STATUS_SUCCEEDED`.
+    func updateComment(
+        params: String,
+        text: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "updateCommentParams": params,
+            "commentText": text
+        ]
+        return try await post(endpoint: "comment/update_comment", body: body, client: client)
+    }
+
+    /// Opens the comment abuse-report panel. `params` is the Report menu
+    /// item's `showEngagementPanelEndpoint.globalConfiguration.params`.
+    /// Works signed-out (YouTube gates the actual submission instead); the
+    /// response carries the reason list plus a `flowStateEntity`.
+    func abuseReportPanel(
+        params: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "panelId": "PAabuse_report",
+            "params": params
+        ]
+        return try await post(endpoint: "get_panel", body: body, client: client)
+    }
+
+    /// Advances the abuse-report flow one step (`reason → details →
+    /// confirmation`). `flowState` is the full entity from `get_panel` /
+    /// the previous response, mutated with the chosen `reasonKey` and
+    /// optional `userComments`; the server requires `reasonKey` (400
+    /// INVALID_ARGUMENT without it).
+    func abuseReportFlow(
+        flowState: [String: Any],
+        flowStateEntityKey: String,
+        flowId: String,
+        targetId: String,
+        client: YouTubeClient? = nil,
+        locale: YouTubeLocale? = nil
+    ) async throws -> [String: Any] {
+        let body: [String: Any] = [
+            "context": contextDict(client: client, locale: locale),
+            "flowId": flowId,
+            "targetId": targetId,
+            "flowState": flowState,
+            "flowStateEntityKey": flowStateEntityKey
+        ]
+        return try await post(endpoint: "flow", body: body, client: client)
     }
 
     // MARK: - Transcripts

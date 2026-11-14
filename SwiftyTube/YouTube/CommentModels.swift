@@ -38,6 +38,12 @@ public struct CommentAuthor: Hashable, Sendable {
     public var isArtist: Bool
 }
 
+public enum CommentVoteState: String, Hashable, Sendable {
+    case indifferent
+    case liked
+    case disliked
+}
+
 public struct CommentItem: Identifiable, Hashable, Sendable {
     public var id: String
     public var author: CommentAuthor
@@ -50,6 +56,21 @@ public struct CommentItem: Identifiable, Hashable, Sendable {
     public var replyCount: Int
     public var replyCountText: String
     public var replyContinuation: String?
+    /// Viewer's current vote. Only meaningful together with the action tokens.
+    public var voteState: CommentVoteState = .indifferent
+    /// Server-issued `performCommentActionEndpoint` tokens for the viewer's
+    /// toolbar surface. All nil when signed out — the viewer must sign in
+    /// before any vote can be performed.
+    public var likeAction: String?
+    public var unlikeAction: String?
+    public var dislikeAction: String?
+    public var undislikeAction: String?
+    public var deleteAction: String?
+    public var editParams: String?
+    /// Server-issued `showEngagementPanelEndpoint.globalConfiguration.params`
+    /// for the comment's Report menu item (`PAabuse_report`). Nil when signed
+    /// out — YouTube only ships the menu on signed-in comment payloads.
+    public var reportParams: String?
 }
 
 public struct CommentsPage: Sendable {
@@ -57,6 +78,7 @@ public struct CommentsPage: Sendable {
     public var nextPageToken: String?
     public var sortTokens: [CommentSort: String]
     public var totalCountText: String?
+    public var createCommentParams: String?
 }
 
 public struct CommentRepliesPage: Sendable {

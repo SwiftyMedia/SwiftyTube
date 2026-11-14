@@ -118,6 +118,191 @@ let items = try await tube.paginate(
 )
 ```
 
+## Comments
+
+Video comments ride the same `/next` transport. Use the **YouTube** config
+(`.youtube`, WEB client) — the Music config's default `.webRemix` client does
+not return the comments section; you can also force `client: .web` on any call.
+
+### Loading and paging
+
+```swift
+// Seed token from the watch page's next response:
+let watch = try await tube.next(videoId: id)
+let token = CommentsParser.findInitialCommentsToken(in: watch)
+// …or YouTubeWatchParser.watch(in: watch, videoId: id).commentsContinuation
+
+let page: CommentsPage = CommentsParser.parseCommentsPage(
+    try await tube.next(continuation: token)
+)
+page.items           // [CommentItem]
+page.totalCountText  // "1,234 Comments" (display only)
+page.nextPageToken   // feed into tube.next(continuation:) for more
+page.sortTokens      // [CommentSort: String] — see Sorting below
+page.createCommentParams  // needed to post, nil when signed out
+```
+
+`CommentItem` carries the rendered text (`runs` → join with
+`CommentsParser.plainText(for:)`), author, `likeCountText`, `replyCount`,
+`replyContinuation`, plus the **server-issued action tokens** for mutations
+below. All tokens are `nil` for signed-out viewers — YouTube only ships them
+on signed-in payloads.
+
+### Sorting
+
+The header hands back one continuation token per sort order; switching sorts
+is just another `next(continuation:)`:
+
+```swift
+let top = page.sortTokens[.top]        // "Top comments"
+let newest = page.sortTokens[.newest]  // "Newest first"
+
+let sorted = CommentsParser.parseCommentsPage(
+    try await tube.next(continuation: newest!)
+)
+```
+
+### Replies
+
+Replies are read-only through this API (there is no reply-posting endpoint
+surfaced here). A comment's `replyContinuation` opens its thread:
+
+```swift
+if let replyToken = comment.replyContinuation {
+    let replies: CommentRepliesPage = CommentsParser.parseRepliesPage(
+        try await tube.next(continuation: replyToken)
+    )
+    replies.items        // [CommentItem], flattened
+    replies.nextPageToken  // more replies, same loop
+}
+```
+
+### Voting (like / dislike)
+
+```swift
+// Pick the token matching the transition you want:
+let action = comment.voteState == .liked ? comment.unlikeAction
+            : comment.voteState == .disliked ? comment.undislikeAction
+            : direction == .like ? comment.likeAction
+            : comment.dislikeAction
+
+let json = try await tube.performCommentAction(action: action!)
+let ok = (json["actionResults"] as? [[String: Any]])?.first?["status"] as? String == "STATUS_SUCCEEDED"
+// The response carries no framework updates — apply the new
+// CommentVoteState (.liked/.disliked/.indifferent) locally.
+```
+
+### Posting a comment
+
+```swift
+guard let params = page.createCommentParams else { return } // signed out
+
+let json = try await tube.createComment(params: params, text: "Hello!")
+if json["showErrorAction"] != nil {
+    // rejected (rate limit, empty text, …)
+} else if let created = (json["actions"] as? [[String: Any]])?.first?["createCommentAction"] {
+    // success — the created comment renderer is in `created`
+}
+```
+
+`createCommentParams` embeds the video id, so there is no separate target
+field. It is only present on the initial comments page (header simplebox),
+not on continuation pages.
+
+### Editing and deleting your comments
+
+Both replay tokens from the comment's own menu items; both report success via
+`actionResults`:
+
+```swift
+// Edit — `editParams` comes from the Edit menu item:
+let json = try await tube.updateComment(params: comment.editParams!, text: "Updated text")
+let ok = (json["actionResults"] as? [[String: Any]])?.first?["status"] as? String == "STATUS_SUCCEEDED"
+
+// Delete — `deleteAction` is a performComment-action token:
+let json2 = try await tube.performCommentAction(action: comment.deleteAction!)
+let deleted = (json2["actionResults"] as? [[String: Any]])?.first?["status"] as? String == "STATUS_SUCCEEDED"
+```
+
+### Reporting a comment
+
+YouTube's report flow is a multi-step state machine: open the panel, then
+advance it with `/flow` until the server returns the confirmation step.
+
+**1. Open the panel** — `reportParams` is the Report menu item's
+`showEngagementPanelEndpoint.globalConfiguration.params`:
+
+```swift
+let json = try await tube.abuseReportPanel(params: comment.reportParams!)
+guard let panel = CommentsParser.parseReportPanel(json) else { return }
+// panel.reasons            — [CommentReportReason] (key + localized text + command)
+// panel.flowState          — the flow-state entity to echo back on every /flow call
+// panel.flowStateEntityKey — its key
+// panel.flowId / .targetId — route (both "abuse_report_flow" in practice)
+```
+
+**2. Select a reason** (mutate the entity locally, exactly like the web's
+radio handler — the POST happens on submit):
+
+```swift
+guard var abuse = panel.flowState["abuseReportFlowState"] as? [String: Any] else { return }
+let reason = panel.reasons.first { $0.key == "SPAM" }! // SEXUAL, VIOLENCE, HATE,
+                                                        // HARASSMENT, DANGEROUS,
+                                                        // SUICIDE_SELF_HARM_OR_EATING_DISORDERS,
+                                                        // MISINFORMATION, CHILD_ABUSE,
+                                                        // TERRORISM, SPAM
+abuse["reasonKey"] = reason.key                    // required — 400 INVALID_ARGUMENT without
+abuse["navigationEnabled"] = true
+abuse["isReportFormDirty"] = true
+abuse["navigationCommand"] = reason.command        // the step's getFlowCommand
+var state = panel.flowState
+state["abuseReportFlowState"] = abuse
+```
+
+**3. Advance the flow:**
+
+```swift
+let update = CommentsParser.parseReportFlowUpdate(
+    try await tube.abuseReportFlow(
+        flowState: state,
+        flowStateEntityKey: panel.flowStateEntityKey,
+        flowId: panel.flowId,
+        targetId: panel.targetId
+    )
+)
+```
+
+`update.outcome` is one of:
+
+- `.steps([[String: Any]])` — advanced; classify each (unwrapped) step with
+  `CommentsParser.parseReportStep(_:)` → `step.page`:
+  - `.reasons` — reason list (also what the panel returns first)
+  - `.details(CommentReportDetailsPage)` — optional free-text step; set
+    `abuse["userComments"] = text` (respect `page.maxChars`) plus
+    `state["flowFormState"] = ["isValid": true]` before the next advance
+  - `.confirmation` — **the report was accepted**; stop here
+  - `.signIn` — YouTube wants a session
+- `.failure(String?)` — the server rejected our state; carries its toast text
+  (e.g. `"Something went wrong. Try again later."` when signed out)
+- `.noOp` — 200 without an `updateFlowCommand`; the state wasn't accepted
+
+After each advance, adopt the replacement entity and re-read its route:
+
+```swift
+if let newState = update.flowState {
+    state = newState
+    if let key = update.flowStateEntityKey { /* use for the next call */ }
+    if let abuse = state["abuseReportFlowState"] as? [String: Any],
+       let command = abuse["navigationCommand"] as? [String: Any], !command.isEmpty {
+        let route = CommentsParser.flowRoute(from: command) // (flowId, targetId)
+    }
+}
+// Prefer the step matching state["currentStepId"]; fall back to the last step.
+```
+
+The panel call works signed-out (YouTube gates the submission server-side and
+answers the first `/flow` with a toast instead).
+
 ## Play a stream
 
 Walks the fallback chain, mints PoTokens lazily, validates, caches - returns the first working stream:

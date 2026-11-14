@@ -47,6 +47,7 @@ public enum CommentsParser {
         var nextPageToken: String?
         var totalCountText: String?
         var sortTokens: [CommentSort: String] = [:]
+        var createCommentParams: String?
 
         for action in collectActions(from: json) {
             if let thread = action["commentThreadRenderer"] as? [String: Any] {
@@ -56,7 +57,7 @@ public enum CommentsParser {
                 guard let base = makeComment(
                     entity: entity,
                     viewModel: viewModel,
-                    toolbarStates: entities.toolbarStates,
+                    entities: entities,
                     isThread: true
                 ) else { continue }
 
@@ -77,6 +78,7 @@ public enum CommentsParser {
                 nextPageToken = token
             } else if let header = action["commentsHeaderRenderer"] as? [String: Any] {
                 totalCountText = extractCountText(from: header) ?? totalCountText
+                createCommentParams = simpleboxCreateParams(from: header) ?? createCommentParams
                 if let subItems = dictionary(header, "sortMenu", "sortFilterSubMenuRenderer")?["subMenuItems"] as? [[String: Any]] {
                     if let top = continuationCommandToken(in: subItems[safe: 0]) {
                         sortTokens[.top] = top
@@ -92,7 +94,8 @@ public enum CommentsParser {
             items: items,
             nextPageToken: nextPageToken,
             sortTokens: sortTokens,
-            totalCountText: totalCountText
+            totalCountText: totalCountText,
+            createCommentParams: createCommentParams
         )
     }
 
@@ -108,7 +111,7 @@ public enum CommentsParser {
             guard var reply = makeComment(
                 entity: entity,
                 viewModel: viewModel,
-                toolbarStates: entities.toolbarStates,
+                entities: entities,
                 isThread: false
             ) else { return }
             reply.replyCount = 0
@@ -145,6 +148,7 @@ public enum CommentsParser {
     private struct Entities {
         var comments: [String: [String: Any]]
         var toolbarStates: [String: [String: Any]]
+        var toolbarSurfaces: [String: [String: Any]]
     }
 
     private static func buildEntities(from json: [String: Any]) -> Entities {
@@ -153,6 +157,7 @@ public enum CommentsParser {
             ?? []
         var comments: [String: [String: Any]] = [:]
         var toolbarStates: [String: [String: Any]] = [:]
+        var toolbarSurfaces: [String: [String: Any]] = [:]
 
         for mutation in mutations {
             guard let payload = mutation["payload"] as? [String: Any] else { continue }
@@ -164,8 +169,12 @@ public enum CommentsParser {
                 let key = (toolbar["key"] as? String) ?? (mutation["entityKey"] as? String)
                 if let key { toolbarStates[key] = toolbar }
             }
+            if let surface = payload["engagementToolbarSurfaceEntityPayload"] as? [String: Any] {
+                let key = (surface["key"] as? String) ?? (mutation["entityKey"] as? String)
+                if let key { toolbarSurfaces[key] = surface }
+            }
         }
-        return Entities(comments: comments, toolbarStates: toolbarStates)
+        return Entities(comments: comments, toolbarStates: toolbarStates, toolbarSurfaces: toolbarSurfaces)
     }
 
     private static func collectActions(from json: [String: Any]) -> [[String: Any]] {
@@ -192,7 +201,7 @@ public enum CommentsParser {
     private static func makeComment(
         entity: [String: Any]?,
         viewModel: [String: Any]?,
-        toolbarStates: [String: [String: Any]],
+        entities: Entities,
         isThread: Bool
     ) -> CommentItem? {
         guard let entity,
@@ -204,10 +213,15 @@ public enum CommentsParser {
         let toolbar = entity["toolbar"] as? [String: Any] ?? [:]
         let stateKey = (viewModel?["toolbarStateKey"] as? String)
             ?? (props["toolbarStateKey"] as? String)
-        let state = stateKey.flatMap { toolbarStates[$0] }
-        let likeText = stringValue(toolbar["likeCountNotliked"])
+        let state = stateKey.flatMap { entities.toolbarStates[$0] }
+        let voteState = voteState(from: state?["likeState"] as? String)
+        let likeText = stringValue(voteState == .liked ? toolbar["likeCountLiked"] : toolbar["likeCountNotliked"])
+            ?? stringValue(toolbar["likeCountNotliked"])
             ?? stringValue(toolbar["likeCountLiked"])
             ?? ""
+
+        let surfaceKey = viewModel?["toolbarSurfaceKey"] as? String
+        let surface = surfaceKey.flatMap { entities.toolbarSurfaces[$0] }
 
         return CommentItem(
             id: id,
@@ -220,20 +234,113 @@ public enum CommentsParser {
             pinnedText: nil,
             replyCount: isThread ? parseCompactNumber(toolbar["replyCount"]) : 0,
             replyCountText: isThread ? (stringValue(toolbar["replyCount"]) ?? "") : "",
-            replyContinuation: nil
+            replyContinuation: nil,
+            voteState: voteState,
+            likeAction: actionToken(in: surface, command: "likeCommand"),
+            unlikeAction: actionToken(in: surface, command: "unlikeCommand"),
+            dislikeAction: actionToken(in: surface, command: "dislikeCommand"),
+            undislikeAction: actionToken(in: surface, command: "undislikeCommand"),
+            deleteAction: deleteAction(in: surface, entity: entity),
+            editParams: editParams(in: surface, entity: entity),
+            reportParams: reportParams(in: surface, entity: entity)
         )
+    }
+
+    private static func voteState(from likeState: String?) -> CommentVoteState {
+        switch likeState {
+        case "TOOLBAR_LIKE_STATE_LIKED": return .liked
+        case "TOOLBAR_LIKE_STATE_DISLIKED": return .disliked
+        default: return .indifferent
+        }
+    }
+
+    private static func actionToken(in surface: [String: Any]?, command: String) -> String? {
+        guard let surface else { return nil }
+        return dictionary(surface, command, "innertubeCommand", "performCommentActionEndpoint")?["action"] as? String
+    }
+
+    private static func deleteAction(in surface: [String: Any]?, entity: [String: Any]) -> String? {
+        if let surface,
+           let items = dictionary(surface, "menuCommand", "innertubeCommand", "menuEndpoint", "menu", "menuRenderer")?["items"]
+            as? [[String: Any]],
+           let token = deleteToken(in: items) {
+            return token
+        }
+        for key in ["actionMenu", "menu"] {
+            guard let items = dictionary(entity, key, "menuRenderer")?["items"] as? [[String: Any]] else { continue }
+            if let token = deleteToken(in: items) { return token }
+        }
+        return nil
+    }
+
+    private static func editParams(in surface: [String: Any]?, entity: [String: Any]) -> String? {
+        if let surface,
+           let items = dictionary(surface, "menuCommand", "innertubeCommand", "menuEndpoint", "menu", "menuRenderer")?["items"]
+            as? [[String: Any]],
+           let params = editToken(in: items) {
+            return params
+        }
+        for key in ["actionMenu", "menu"] {
+            guard let items = dictionary(entity, key, "menuRenderer")?["items"] as? [[String: Any]] else { continue }
+            if let params = editToken(in: items) { return params }
+        }
+        return nil
+    }
+
+    private static func editToken(in items: [[String: Any]]) -> String? {
+        for item in items {
+            guard let renderer = item["menuNavigationItemRenderer"] as? [String: Any]
+                    ?? item["menuServiceItemRenderer"] as? [String: Any],
+                  let endpoint = renderer["navigationEndpoint"] as? [String: Any]
+                    ?? renderer["serviceEndpoint"] as? [String: Any],
+                  let dialog = dictionary(endpoint, "updateCommentDialogEndpoint", "dialog", "commentDialogRenderer"),
+                  let submit = dictionary(dialog, "submitButton", "buttonRenderer", "serviceEndpoint"),
+                  let params = dictionary(submit, "updateCommentEndpoint")?["updateCommentParams"] as? String
+            else { continue }
+            return params
+        }
+        return nil
+    }
+
+    private static func deleteToken(in items: [[String: Any]]) -> String? {
+        var fallback: String?
+        for item in items {
+            guard let renderer = item["menuServiceItemRenderer"] as? [String: Any]
+                    ?? item["menuNavigationItemRenderer"] as? [String: Any],
+                  let endpoint = renderer["serviceEndpoint"] as? [String: Any]
+                    ?? renderer["navigationEndpoint"] as? [String: Any],
+                  let token = menuActionToken(in: endpoint) else { continue }
+            let icon = dictionary(renderer, "icon")?["iconType"] as? String
+            let title = (dictionary(renderer, "text")?["runs"] as? [[String: Any]])?
+                .compactMap { $0["text"] as? String }.joined() ?? ""
+            if icon == "DELETE" || title == "Delete" { return token }
+            if fallback == nil { fallback = token }
+        }
+        return fallback
+    }
+
+    private static func menuActionToken(in endpoint: [String: Any]) -> String? {
+        if let action = dictionary(endpoint, "performCommentActionEndpoint")?["action"] as? String {
+            return action
+        }
+        guard let confirm = endpoint["confirmDialogEndpoint"] as? [String: Any] else { return nil }
+        let dialog = dictionary(confirm, "content", "confirmDialogRenderer")
+            ?? dictionary(confirm, "dialog", "confirmDialogRenderer")
+        guard let dialog, let confirmButton = dialog["confirmButton"] as? [String: Any] else { return nil }
+        let target = (confirmButton["serviceEndpoint"] as? [String: Any])
+            ?? dictionary(confirmButton, "buttonRenderer", "serviceEndpoint")
+            ?? [:]
+        return dictionary(target, "performCommentActionEndpoint")?["action"] as? String
     }
 
     private static func makeAuthor(from entity: [String: Any]) -> CommentAuthor {
         let author = entity["author"] as? [String: Any] ?? [:]
-        let channelPath =
-            dictionary(author, "channelCommand", "innertubeCommand", "commandMetadata", "webCommandMetadata")?["url"] as? String
-            ?? {
-                if let channelId = author["channelId"] as? String, !channelId.isEmpty {
-                    return "/channel/\(channelId)"
-                }
-                return nil
-            }()
+        let explicitId = author["channelId"] as? String
+        let channelPath: String? = {
+            if let explicitId, !explicitId.isEmpty { return "/channel/\(explicitId)" }
+            return dictionary(author, "channelCommand", "innertubeCommand", "commandMetadata", "webCommandMetadata")?["url"]
+                as? String
+        }()
 
         return CommentAuthor(
             name: stringValue(author["displayName"]) ?? "",
@@ -334,6 +441,15 @@ public enum CommentsParser {
         dictionary(item ?? [:], "serviceEndpoint", "continuationCommand")?["token"] as? String
     }
 
+    private static func simpleboxCreateParams(from header: [String: Any]) -> String? {
+        dictionary(
+            header,
+            "createRenderer", "commentSimpleboxRenderer",
+            "submitButton", "buttonRenderer",
+            "serviceEndpoint", "createCommentEndpoint"
+        )?["createCommentParams"] as? String
+    }
+
     private static func extractCountText(from header: [String: Any]) -> String? {
         if let runs = dictionary(header, "countText")?["runs"] as? [[String: Any]] {
             if let match = runs
@@ -432,7 +548,7 @@ public enum CommentsParser {
         return nil
     }
 
-    private static func dictionary(_ root: [String: Any], _ path: String...) -> [String: Any]? {
+    static func dictionary(_ root: [String: Any], _ path: String...) -> [String: Any]? {
         var current: Any? = root
         for key in path {
             guard let dict = current as? [String: Any] else { return nil }
