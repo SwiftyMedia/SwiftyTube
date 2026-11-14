@@ -37,6 +37,14 @@ public struct RetryPolicy: Sendable {
         jitter: .milliseconds(200)
     )
 
+    public static let singleAttempt = RetryPolicy(
+        maxAttempts: 1,
+        baseDelay: .milliseconds(0),
+        factor: 1,
+        maxDelay: .milliseconds(0),
+        jitter: .milliseconds(0)
+    )
+
     public func delay(for attempt: Int) -> Duration {
         let exponential = baseDelay * pow(factor, Double(max(attempt, 0)))
         let capped = min(exponential, maxDelay)

@@ -312,13 +312,20 @@ public actor MutationService {
         thumbnailUrl: String? = nil,
         playlistId: String? = nil,
         songCount: Int = 0,
-        duration: Int = 0,
-        feedbackToken: String? = nil
+        duration: Int = 0
     ) async throws {
-        if var existing = try await store.fetchAlbum(id: browseId) {
+        var resolvedPlaylistId = playlistId?.isEmpty == false ? playlistId : nil
+        let fetchedAlbum = try await store.fetchAlbum(id: browseId)
+        if resolvedPlaylistId == nil, let stored = fetchedAlbum?.playlistId, !stored.isEmpty {
+            resolvedPlaylistId = stored
+        }
+        if resolvedPlaylistId == nil {
+            resolvedPlaylistId = try await albumPlaylistId(browseId: browseId)
+        }
+        if var existing = fetchedAlbum {
             existing.bookmarkedAt = Date()
             if let thumbnailUrl { existing.thumbnailUrl = thumbnailUrl }
-            if let playlistId { existing.playlistId = playlistId }
+            if let resolvedPlaylistId { existing.playlistId = resolvedPlaylistId }
             if !title.isEmpty { existing.title = title }
             if songCount > 0 { existing.songCount = songCount }
             if duration > 0 { existing.duration = duration }
@@ -327,7 +334,7 @@ public actor MutationService {
             let entity = SyncAlbum(
                 id: browseId,
                 title: title,
-                playlistId: playlistId,
+                playlistId: resolvedPlaylistId,
                 thumbnailUrl: thumbnailUrl,
                 songCount: songCount,
                 duration: duration,
@@ -335,9 +342,12 @@ public actor MutationService {
             )
             try await store.saveAlbum(entity)
         }
-        guard let token = feedbackToken, !token.isEmpty else { return }
+        guard let pid = resolvedPlaylistId else {
+            SwiftyTubeLog.error("saveAlbum: no playlistId for \(browseId), local-only")
+            return
+        }
         try await OptimisticMutation.attemptingRemote(
-            { _ = try await self.client.feedback(tokens: [token]) },
+            { _ = try await self.client.ratePlaylist(playlistId: pid, rating: "LIKE") },
             rollback: {
                 if var restored = try? await self.store.fetchAlbum(id: browseId) {
                     restored.bookmarkedAt = nil
@@ -347,16 +357,26 @@ public actor MutationService {
         )
     }
 
-    public func unsaveAlbum(browseId: String, feedbackToken: String? = nil) async throws {
+    public func unsaveAlbum(browseId: String, playlistId: String? = nil) async throws {
         var hadBookmark = false
+        var existingPlaylistId = playlistId?.isEmpty == false ? playlistId : nil
         if var existing = try await store.fetchAlbum(id: browseId) {
             hadBookmark = existing.bookmarkedAt != nil
             existing.bookmarkedAt = nil
+            if existingPlaylistId == nil, let stored = existing.playlistId, !stored.isEmpty {
+                existingPlaylistId = stored
+            }
             try await store.saveAlbum(existing)
         }
-        guard let token = feedbackToken, !token.isEmpty else { return }
+        if existingPlaylistId == nil {
+            existingPlaylistId = try await albumPlaylistId(browseId: browseId)
+        }
+        guard let pid = existingPlaylistId else {
+            SwiftyTubeLog.error("unsaveAlbum: no playlistId for \(browseId), local-only")
+            return
+        }
         try await OptimisticMutation.attemptingRemote(
-            { _ = try await self.client.feedback(tokens: [token]) },
+            { _ = try await self.client.ratePlaylist(playlistId: pid, rating: "INDIFFERENT") },
             rollback: {
                 if hadBookmark, var restored = try? await self.store.fetchAlbum(id: browseId) {
                     restored.bookmarkedAt = Date()
@@ -364,6 +384,38 @@ public actor MutationService {
                 }
             }
         )
+    }
+
+    // MARK: - Album playlist resolution
+
+    private func albumPlaylistId(browseId: String) async throws -> String? {
+        let json = try await client.browse(browseId: browseId)
+        var found: String?
+        func walk(_ value: Any) {
+            if found != nil { return }
+            if let dict = value as? [String: Any] {
+                if let like = dict["likeEndpoint"] as? [String: Any],
+                   let target = like["target"] as? [String: Any],
+                   let pid = target["playlistId"] as? String, pid.hasPrefix("OLAK") {
+                    found = pid
+                    return
+                }
+                for nested in dict.values { walk(nested) }
+            } else if let array = value as? [Any] {
+                for nested in array { walk(nested) }
+            }
+        }
+        walk(json)
+        if found == nil,
+           let microformat = json["microformat"] as? [String: Any],
+           let mfRenderer = microformat["microformatDataRenderer"] as? [String: Any],
+           let url = mfRenderer["urlCanonical"] as? String,
+           let components = URLComponents(string: url),
+           let list = components.queryItems?.first(where: { $0.name == "list" })?.value,
+           list.hasPrefix("OLAK") {
+            found = list
+        }
+        return found
     }
 
     // MARK: - Podcasts

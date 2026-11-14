@@ -184,9 +184,10 @@ public actor InnerTubeClient {
     func post(
         endpoint: String,
         body: [String: Any],
-        client: YouTubeClient?
+        client: YouTubeClient?,
+        retryPolicy: RetryPolicy = .innerTube
     ) async throws -> [String: Any] {
-        let data = try await postData(endpoint: endpoint, body: body, client: client)
+        let data = try await postData(endpoint: endpoint, body: body, client: client, retryPolicy: retryPolicy)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw InnerTubeError.decodingFailed
         }
@@ -201,7 +202,8 @@ public actor InnerTubeClient {
     func postData(
         endpoint: String,
         body: [String: Any],
-        client: YouTubeClient?
+        client: YouTubeClient?,
+        retryPolicy: RetryPolicy = .innerTube
     ) async throws -> Data {
         let client = client ?? config.defaultClient
         let requestID = String(UUID().uuidString.prefix(8))
@@ -216,8 +218,21 @@ public actor InnerTubeClient {
         let hasAuth = request.value(forHTTPHeaderField: "Authorization") != nil
         let hasAuthUser = request.value(forHTTPHeaderField: "X-Goog-AuthUser") != nil
         let authAvailable = auth.sapisid != nil && !auth.cookies.isEmpty
-        SwiftyTubeLog.debug("[HTTP][\(requestID)] → \(endpoint) url=\(request.url?.absoluteString ?? "?") client=\(client.clientName)/\(client.clientVersion) clientId=\(client.clientId) clientLoginSupported=\(client.loginSupported) authAvailable=\(authAvailable) cookies=\(auth.cookies.count) sapisid=\(auth.sapisid != nil ? "yes" : "no") visitorData=\(auth.visitorData != nil ? "yes" : "no") dataSyncId=\(auth.dataSyncId != nil ? "yes" : "no") hasCookie=\(hasCookie) hasAuth=\(hasAuth) hasAuthUser=\(hasAuthUser) poToken=\(body["serviceIntegrityDimensions"] != nil ? "yes" : "no") body=\(Self.bodyDiagnostics(body))")
-        return try await RetryPolicy.innerTube.run(
+        let sapisid = auth.sapisid != nil ? "yes" : "no"
+        let visitorData = auth.visitorData != nil ? "yes" : "no"
+        let dataSyncId = auth.dataSyncId != nil ? "yes" : "no"
+        let poToken = body["serviceIntegrityDimensions"] != nil ? "yes" : "no"
+        let url = request.url?.absoluteString ?? "?"
+        SwiftyTubeLog.debug(
+            "[HTTP][\(requestID)] → \(endpoint) url=\(url)"
+                + " client=\(client.clientName)/\(client.clientVersion) clientId=\(client.clientId)"
+                + " clientLoginSupported=\(client.loginSupported) authAvailable=\(authAvailable)"
+                + " cookies=\(auth.cookies.count) sapisid=\(sapisid) visitorData=\(visitorData)"
+                + " dataSyncId=\(dataSyncId) hasCookie=\(hasCookie) hasAuth=\(hasAuth)"
+                + " hasAuthUser=\(hasAuthUser) poToken=\(poToken)"
+                + " body=\(Self.bodyDiagnostics(body))"
+        )
+        return try await retryPolicy.run(
             { try await Self.postOnce(request: request, session: session, requestID: requestID, endpoint: endpoint) },
             isRetryable: Self.isRetryable,
             onRetry: { attempt, error in
@@ -226,14 +241,24 @@ public actor InnerTubeClient {
         )
     }
 
-    private nonisolated static func postOnce(request: URLRequest, session: URLSession, requestID: String, endpoint: String) async throws -> Data {
+    private nonisolated static func postOnce(
+        request: URLRequest,
+        session: URLSession,
+        requestID: String,
+        endpoint: String
+    ) async throws -> Data {
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             SwiftyTubeLog.error("[HTTP][\(requestID)] ← endpoint=\(endpoint) invalid response")
             throw InnerTubeError.invalidResponse
         }
         let responseHeaders = httpResponse.allHeaderFields.keys.compactMap { $0 as? String }.sorted().joined(separator: ",")
-        SwiftyTubeLog.debug("[HTTP][\(requestID)] ← endpoint=\(endpoint) status=\(httpResponse.statusCode) bytes=\(data.count) contentType=\(httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "none") headers=[\(responseHeaders)]")
+        let status = httpResponse.statusCode
+        let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "none"
+        SwiftyTubeLog.debug(
+            "[HTTP][\(requestID)] ← endpoint=\(endpoint) status=\(status)"
+                + " bytes=\(data.count) contentType=\(contentType) headers=[\(responseHeaders)]"
+        )
         guard (200 ... 299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "<binary>"
             SwiftyTubeLog.error("[HTTP][\(requestID)] errorBody=\(body.prefix(1000))")
@@ -250,9 +275,12 @@ public actor InnerTubeClient {
         let clientName = client?["clientName"] as? String ?? "?"
         let clientVersion = client?["clientVersion"] as? String ?? "?"
         let browseID = body["browseId"] as? String ?? "-"
+        let onBehalf = user?["onBehalfOfUser"] != nil ? "yes" : "no"
         let continuation = body["continuation"] as? String
         let queryLength = (body["query"] as? String)?.count ?? 0
-        return "keys=[\(keys)] contextClient=\(clientName)/\(clientVersion) userOnBehalfOfUser=\(user?["onBehalfOfUser"] != nil ? "yes" : "no") browseId=\(browseID) continuation=\(continuation == nil ? "no" : "yes") queryLength=\(queryLength)"
+        return "keys=[\(keys)] contextClient=\(clientName)/\(clientVersion)"
+            + " userOnBehalfOfUser=\(onBehalf) browseId=\(browseID)"
+            + " continuation=\(continuation == nil ? "no" : "yes") queryLength=\(queryLength)"
     }
 
     private nonisolated static let isRetryable: @Sendable (Error) -> Bool = { error in

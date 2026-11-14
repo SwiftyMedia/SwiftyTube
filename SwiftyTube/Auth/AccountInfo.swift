@@ -13,16 +13,19 @@ public struct AccountInfo: Sendable, Hashable, Codable {
     public var email: String?
     public var channelHandle: String?
     public var thumbnailUrl: String?
+    public var channelId: String?
 
     public init(
         name: String,
         email: String? = nil,
         channelHandle: String? = nil,
-        thumbnailUrl: String? = nil
+        thumbnailUrl: String? = nil,
+        channelId: String? = nil
     ) {
         self.name = name
         self.email = email
         self.channelHandle = channelHandle
         self.thumbnailUrl = thumbnailUrl
+        self.channelId = channelId
     }
 }

@@ -163,6 +163,9 @@ struct AccountMenuTests {
                             "accountPhoto": ["thumbnails": [
                                 ["url": "https://yt3.ggpht.com/small", "width": 32],
                                 ["url": "https://yt3.ggpht.com/big", "width": 96]
+                            ]],
+                            "channelCommand": ["innertubeCommand": [
+                                "browseEndpoint": ["browseId": "UC0123456789abcdefghijk"]
                             ]]
                         ]]
                     ]]
@@ -174,5 +177,26 @@ struct AccountMenuTests {
         #expect(info.email == "r@example.com")
         #expect(info.channelHandle == "@realuser")
         #expect(info.thumbnailUrl == "https://yt3.ggpht.com/big")
+        #expect(info.channelId == "UC0123456789abcdefghijk")
+    }
+
+    @Test("extractAccountInfo pulls the channel id from a channel URL too")
+    func extractAccountInfoFromChannelUrl() {
+        let json: [String: Any] = [
+            "actions": [
+                ["openPopupAction": [
+                    "popup": ["multiPageMenuRenderer": [
+                        "header": ["activeAccountHeaderRenderer": [
+                            "accountName": ["runs": [["text": "Real User"]]],
+                            "settingsEndpoint": ["commandMetadata": [
+                                "webCommandMetadata": ["url": "/channel/UCurlid1234567890abcdefg/settings"]
+                            ]]
+                        ]]
+                    ]]
+                ]]
+            ]
+        ]
+        let info = InnerTubeClient.extractAccountInfo(from: json)
+        #expect(info.channelId == "UCurlid1234567890abcdefg")
     }
 }
