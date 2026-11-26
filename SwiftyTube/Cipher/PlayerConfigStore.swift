@@ -8,13 +8,14 @@
 import Foundation
 
 /// Known player hashes → cipher info. Bundled JSON by default, overlaid by
-/// zemer-cipher's remote copy so rotations self-heal. Entries are regex-locked
+/// Swiphie's remote registry so rotations self-heal. Entries are regex-locked
 /// (sig = name(i,i,INPUT), nClass = identifier) since they run as JS.
 public actor PlayerConfigStore {
     public static let shared = PlayerConfigStore()
 
-    private static let remoteURL = URL(string:
-        "https://raw.githubusercontent.com/ZemerTeam/zemer-cipher/master/library/src/main/assets/player_configs.json"
+    /// Swiphie's validated, live-updated player config table.
+    public static let defaultRemoteURL = URL(string:
+        "https://raw.githubusercontent.com/SwiftyMedia/Swiphie/main/registry/player_configs.json"
     )!
 
     private let refreshTTL: TimeInterval = 6 * 60 * 60
@@ -53,10 +54,16 @@ public actor PlayerConfigStore {
 
     private let bundle: Bundle
     private let session: URLSession
+    private let remoteURL: URL
 
-    public init(bundle: Bundle = .main, session: URLSession = .shared) {
+    public init(
+        bundle: Bundle = .main,
+        session: URLSession = .shared,
+        remoteURL: URL = PlayerConfigStore.defaultRemoteURL
+    ) {
         self.bundle = bundle
         self.session = session
+        self.remoteURL = remoteURL
     }
 
     // MARK: - Lookup
@@ -138,7 +145,7 @@ public actor PlayerConfigStore {
         refreshInFlight = true
         defer { refreshInFlight = false }
 
-        var request = URLRequest(url: Self.remoteURL)
+        var request = URLRequest(url: remoteURL)
         request.timeoutInterval = 15
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
         if let etag {
