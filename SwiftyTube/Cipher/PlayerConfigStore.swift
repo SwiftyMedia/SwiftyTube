@@ -15,7 +15,7 @@ public actor PlayerConfigStore {
 
     /// Swiphie's validated, live-updated player config table.
     public static let defaultRemoteURL = URL(string:
-        "https://raw.githubusercontent.com/SwiftyMedia/Swiphie/main/registry/player_configs.json"
+        "https://raw.githubusercontent.com/SwiftyMedia/Swiphie/config.json/registry/player_configs.json"
     )!
 
     private let refreshTTL: TimeInterval = 6 * 60 * 60
@@ -146,8 +146,10 @@ public actor PlayerConfigStore {
         defer { refreshInFlight = false }
 
         var request = URLRequest(url: remoteURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         if let etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
