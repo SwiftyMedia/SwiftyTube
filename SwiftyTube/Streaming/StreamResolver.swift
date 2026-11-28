@@ -20,6 +20,8 @@ public struct StreamResolveOptions: Sendable {
     public var downloadQuality: DownloadQuality
     /// Resolution cap for the returned muxed stream.
     public var videoQuality: VideoQuality
+    /// Prefer a video-bearing format when resolving video playback.
+    public var preferVideo: Bool
 
     public init(
         poToken: String? = nil,
@@ -28,7 +30,8 @@ public struct StreamResolveOptions: Sendable {
         forDownload: Bool = false,
         audioQuality: AudioQuality = .auto,
         downloadQuality: DownloadQuality = .high,
-        videoQuality: VideoQuality = .auto
+        videoQuality: VideoQuality = .auto,
+        preferVideo: Bool = false
     ) {
         self.poToken = poToken
         self.streamingDataPoToken = streamingDataPoToken
@@ -37,6 +40,7 @@ public struct StreamResolveOptions: Sendable {
         self.audioQuality = audioQuality
         self.downloadQuality = downloadQuality
         self.videoQuality = videoQuality
+        self.preferVideo = preferVideo
     }
 
     public static let `default` = StreamResolveOptions()
@@ -183,6 +187,13 @@ public enum StreamResolver: Sendable {
                       downloadQuality: options.downloadQuality
                   ) {
             selectedFormat = downloadFormat
+        } else if options.preferVideo,
+                  let best = FormatSelector.bestVideoFormat(
+                    from: allFormats,
+                    preference: options.videoQuality
+                  ) {
+            selectedFormat = best
+            SwiftyTubeLog.debug("Selecting video-bearing format for playback")
         } else if let best = FormatSelector.bestAudioFormat(
             from: allFormats,
             preference: options.audioQuality
