@@ -19,6 +19,7 @@ public struct YouTubeVideo: Sendable, Hashable, Codable {
     public var viewCountText: String?
     public var shortViewCountText: String?
     public var publishedTimeText: String?
+    public var likeCountText: String?
     public var isLive: Bool
     public var isShort: Bool
 
@@ -33,6 +34,7 @@ public struct YouTubeVideo: Sendable, Hashable, Codable {
         viewCountText: String? = nil,
         shortViewCountText: String? = nil,
         publishedTimeText: String? = nil,
+        likeCountText: String? = nil,
         isLive: Bool = false,
         isShort: Bool = false
     ) {
@@ -46,6 +48,7 @@ public struct YouTubeVideo: Sendable, Hashable, Codable {
         self.viewCountText = viewCountText
         self.shortViewCountText = shortViewCountText
         self.publishedTimeText = publishedTimeText
+        self.likeCountText = likeCountText
         self.isLive = isLive
         self.isShort = isShort
     }
@@ -123,6 +126,17 @@ public struct YouTubeShelf: Sendable, Hashable, Codable {
         self.subtitle = subtitle
         self.videos = videos
         self.playlists = playlists
+    }
+}
+
+/// One page of the Shorts reel sequence: video ids plus the next-page token.
+public struct YouTubeShortsPage: Sendable, Hashable, Codable {
+    public var videoIds: [String]
+    public var continuation: String?
+
+    public init(videoIds: [String] = [], continuation: String? = nil) {
+        self.videoIds = videoIds
+        self.continuation = continuation
     }
 }
 

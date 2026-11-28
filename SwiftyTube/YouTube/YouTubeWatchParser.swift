@@ -92,6 +92,7 @@ public enum YouTubeWatchParser: Sendable {
     static func currentVideo(in json: [String: Any], videoId: String) -> YouTubeVideo? {
         var title: String?
         var viewCount: String?
+        var likeCount: String?
         var owner: [String: Any]?
 
         YouTubeFeedParser.walk(json) { renderer, key in
@@ -101,6 +102,8 @@ public enum YouTubeWatchParser: Sendable {
                 viewCount = viewCount ?? viewCountText(renderer)
             case "videoSecondaryInfoRenderer":
                 owner = owner ?? InnerTubeDecode.dict(at: ["owner", "videoOwnerRenderer"], in: renderer)
+            case "segmentedLikeDislikeButtonRenderer":
+                likeCount = likeCount ?? likeCountText(inSegmented: renderer)
             default:
                 break
             }
@@ -115,11 +118,63 @@ public enum YouTubeWatchParser: Sendable {
             channelId: channelId,
             durationSeconds: nil,
             thumbnailURL: nil,
+            channelAvatarURL: owner.flatMap { InnerTubeDecode.thumbnailURLTolerant($0) },
             viewCountText: viewCount,
             publishedTimeText: nil,
+            likeCountText: likeCount,
             isLive: false,
             isShort: false
         )
+    }
+
+    /// Like count ("1.2K") from a `segmentedLikeDislikeButtonRenderer`. The
+    /// like button lives under `likeButtonViewModel` (new) or `likeButton`
+    /// (legacy); its `likeCount` runs text or accessibility label carries the
+    /// count.
+    private static func likeCountText(inSegmented segmented: [String: Any]) -> String? {
+        for containerKey in ["likeButtonViewModel", "likeButton"] {
+            guard let container = InnerTubeDecode.dict(at: [containerKey], in: segmented) else { continue }
+            if let count = findLikeCount(container) { return count }
+            var label: String?
+            YouTubeFeedParser.walk(container) { renderer, key in
+                guard label == nil, key == "toggleButtonRenderer" else { return }
+                label = InnerTubeDecode.string(
+                    at: ["defaultTextAccessibility", "accessibilityData", "label"], in: renderer
+                ) ?? InnerTubeDecode.string(
+                    at: ["accessibilityText", "accessibility", "label"], in: renderer
+                )
+            }
+            if let label, let count = likeCount(fromLabel: label) { return count }
+        }
+        return nil
+    }
+
+    /// Depth-first search for a `likeCount` value (string or runs text).
+    private static func findLikeCount(_ value: Any) -> String? {
+        if let dict = value as? [String: Any] {
+            if let count = dict["likeCount"] {
+                if let text = count as? String, !text.isEmpty { return text }
+                if let text = InnerTubeDecode.runsTextTolerant(count), !text.isEmpty { return text }
+            }
+            for child in dict.values {
+                if let found = findLikeCount(child) { return found }
+            }
+        } else if let array = value as? [Any] {
+            for element in array {
+                if let found = findLikeCount(element) { return found }
+            }
+        }
+        return nil
+    }
+
+    /// Extracts the count from labels like "1.2K likes" / "Like this video… 1.2K".
+    private static func likeCount(fromLabel label: String) -> String? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"([\d][\d.,]*\s*[KMBkmb]?)\s+likes?\b"#
+        ), let match = regex.firstMatch(
+            in: label, range: NSRange(label.startIndex..., in: label)
+        ), let range = Range(match.range(at: 1), in: label) else { return nil }
+        return String(label[range]).replacingOccurrences(of: " ", with: "")
     }
 
     private static func viewCountText(_ renderer: [String: Any]) -> String? {

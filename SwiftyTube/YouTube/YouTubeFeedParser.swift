@@ -88,6 +88,26 @@ public enum YouTubeFeedParser: Sendable {
         )
     }
 
+    /// Shorts reel sequence page (`reel/reel_watch_sequence`): ids live under
+    /// `entries[].command.reelWatchEndpoint.videoId`, the next-page token at
+    /// the root `continuationEndpoint`.
+    public static func shortsSequence(in json: [String: Any]) -> YouTubeShortsPage {
+        var ids: [String] = []
+        var seen = Set<String>()
+        if let entries = json["entries"] as? [[String: Any]] {
+            for entry in entries {
+                guard let id = InnerTubeDecode.string(
+                    at: ["command", "reelWatchEndpoint", "videoId"], in: entry
+                ), seen.insert(id).inserted else { continue }
+                ids.append(id)
+            }
+        }
+        let continuation = InnerTubeDecode.string(
+            at: ["continuationEndpoint", "continuationCommand", "token"], in: json
+        )
+        return YouTubeShortsPage(videoIds: ids, continuation: continuation)
+    }
+
     // MARK: - Continuation
 
     /// Next-page token: `continuationCommand.token`, else `nextContinuationData`.
@@ -202,7 +222,7 @@ let viewCount = InnerTubeDecode.runsTextTolerant(renderer["viewCountText"])
             viewCountText: info.viewCount,
             publishedTimeText: info.published,
             isLive: lockupIsLive(lockup),
-            isShort: false
+            isShort: lockupIsShort(lockup)
         )
     }
 
@@ -430,6 +450,22 @@ let viewCount = InnerTubeDecode.runsTextTolerant(renderer["viewCountText"])
             }
         }
         return live
+    }
+
+    /// Shorts surface as `lockupViewModel` with a SHORT content type or a
+    /// reelWatchEndpoint anywhere in their tap target.
+    static func lockupIsShort(_ lockup: [String: Any]) -> Bool {
+        if let contentType = lockup["contentType"] as? String,
+           contentType.uppercased().contains("SHORT") {
+            return true
+        }
+        var isShort = false
+        walk(lockup) { renderer, key in
+            if key == "reelWatchEndpoint", renderer["videoId"] != nil {
+                isShort = true
+            }
+        }
+        return isShort
     }
 
     // MARK: - Shared helpers
